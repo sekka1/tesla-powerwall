@@ -1,0 +1,30 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "tesla-powerwall",
+  "main": "src/index.ts",
+  "compatibility_date": "2024-12-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "routes": [
+    {
+      "pattern": "power.managedkube.com",
+      "custom_domain": true
+    }
+  ],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "tesla-powerwall-db",
+      "database_id": "REPLACE_WITH_D1_DATABASE_ID",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "vars": {
+    "TESLA_CLIENT_ID": "REPLACE_WITH_TESLA_CLIENT_ID",
+    "TESLA_REDIRECT_URI": "https://power.managedkube.com/auth/callback",
+    "TESLA_PUBLIC_KEY": "-----BEGIN PUBLIC KEY-----\nREPLACE_WITH_ACTUAL_PEM\n-----END PUBLIC KEY-----"
+  },
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  }
+}

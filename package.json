@@ -1,0 +1,29 @@
+{
+  "name": "tesla-powerwall",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Tesla OAuth & Public Key Worker for Tesla Powerwall integration, deployed on Cloudflare Workers.",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "db:migrate:local": "wrangler d1 migrations apply tesla-powerwall-db --local",
+    "db:migrate:remote": "wrangler d1 migrations apply tesla-powerwall-db --remote"
+  },
+  "dependencies": {
+    "hono": "^4.6.14"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.5.30",
+    "@cloudflare/workers-types": "^4.20241224.0",
+    "@eslint/js": "^9.17.0",
+    "eslint": "^9.17.0",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.19.0",
+    "vitest": "^2.1.8",
+    "wrangler": "^3.99.0"
+  }
+}

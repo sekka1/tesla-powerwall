@@ -1,0 +1,8 @@
+# Example local development variables for `wrangler dev`.
+# Copy this file to `.dev.vars` (which is gitignored) and fill in real values.
+# Never commit `.dev.vars` or real secrets to source control.
+
+TESLA_CLIENT_ID="your-tesla-client-id"
+TESLA_CLIENT_SECRET="your-tesla-client-secret"
+TESLA_REDIRECT_URI="http://localhost:8787/auth/callback"
+TESLA_PUBLIC_KEY="-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----"
