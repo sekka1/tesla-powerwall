@@ -13,9 +13,9 @@ if (placeholders.length > 0) {
     console.error(`  - ${placeholder}`);
   }
   console.error(
-    '\nRun the "Setup Cloudflare D1 Database" GitHub Actions workflow (workflow_dispatch) to create the D1 ' +
-      'database, then copy the printed database_id into wrangler.jsonc. See README.md > "Cloudflare D1 setup ' +
-      '(one-time)" for details.'
+    '\nReplace the `REPLACE_WITH_*` placeholders in wrangler.jsonc before deploying (e.g. D1 database_id, TESLA_CLIENT_ID, TESLA_PUBLIC_KEY). ' +
+      'If the D1 database_id is still a placeholder, run the "Setup Cloudflare D1 Database" workflow first to create the database and copy the printed database_id into wrangler.jsonc. ' +
+      'See README.md > "Configuration" and "Cloudflare D1 setup (one-time)" for details.'
   );
   process.exit(1);
 }
