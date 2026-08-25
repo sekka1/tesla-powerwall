@@ -1,0 +1,49 @@
+name: Setup Cloudflare D1 Database
+
+# Manual, one-time (or re-runnable) workflow to create the Cloudflare D1 database used by this
+# Worker and apply migrations to it. Run this before the first "Deploy" workflow run, or whenever
+# you need to (re-)provision the database, e.g. after rotating Cloudflare accounts.
+#
+# After running this workflow, copy the `database_id` (uuid) printed in the "Show D1 databases"
+# step's logs into wrangler.jsonc under `d1_databases[0].database_id`, then commit and push.
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  setup-d1:
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Create D1 database (skips if it already exists)
+        run: |
+          set +e
+          npx wrangler d1 create tesla-powerwall-db
+          status=$?
+          set -e
+          if [ $status -ne 0 ]; then
+            echo "::notice::Database creation failed or 'tesla-powerwall-db' already exists. Continuing to look up the existing database."
+          fi
+
+      - name: Show D1 databases
+        run: |
+          echo "Copy the 'database_id' (uuid) for tesla-powerwall-db below into wrangler.jsonc (d1_databases[0].database_id), then commit and push:"
+          npx wrangler d1 list
+
+      - name: Apply migrations to the remote database
+        run: npm run db:migrate:remote
