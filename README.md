@@ -82,9 +82,9 @@ this must be done once before the first deploy:
    doesn't already exist and applies migrations to it.
 3. Copy the `database_id` printed in the workflow's "Show D1 databases" step logs into
    `wrangler.jsonc` under `d1_databases[0].database_id`, replacing the placeholder.
-4. Commit and push the change to `main` — this triggers the **Deploy** workflow, which now also
-   verifies `wrangler.jsonc` has no leftover placeholder values (`npm run check:config`) and applies
-   any pending migrations before deploying the Worker.
+4. Replace any remaining `REPLACE_WITH_*` placeholders in `wrangler.jsonc` (including
+   `d1_databases[0].database_id`, `vars.TESLA_CLIENT_ID`, and `vars.TESLA_PUBLIC_KEY`), then
+   commit and push the change to `main` — this triggers the **Deploy** workflow, which now also verifies `wrangler.jsonc` has no leftover placeholder values (`npm run check:config`) and applies any pending migrations before deploying the Worker.
 
 You only need to repeat this if the database is ever deleted/recreated or you move to a different
 Cloudflare account.
