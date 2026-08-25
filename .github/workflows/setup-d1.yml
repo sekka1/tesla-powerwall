@@ -33,11 +33,17 @@ jobs:
       - name: Create D1 database (skips if it already exists)
         run: |
           set +e
-          npx wrangler d1 create tesla-powerwall-db
+          output=$(npx wrangler d1 create tesla-powerwall-db 2>&1)
           status=$?
           set -e
+          echo "$output"
           if [ $status -ne 0 ]; then
-            echo "::notice::Database creation failed or 'tesla-powerwall-db' already exists. Continuing to look up the existing database."
+            if echo "$output" | grep -qi "already exists"; then
+              echo "::notice::Database 'tesla-powerwall-db' already exists. Continuing to look up the existing database."
+            else
+              echo "::error::Failed to create D1 database 'tesla-powerwall-db' for an unexpected reason (see output above)."
+              exit $status
+            fi
           fi
 
       - name: Show D1 databases
