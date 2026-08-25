@@ -21,9 +21,11 @@ It is deployed at `https://power.managedkube.com`.
 ```
 src/index.ts          Hono application: routes for the public key, OAuth login, and OAuth callback
 migrations/           Numbered SQL migrations applied to the Cloudflare D1 database via wrangler
+scripts/              Helper scripts (e.g. wrangler.jsonc placeholder-value check)
 tests/oauth.test.ts   Vitest + @cloudflare/vitest-pool-workers tests (Tesla API calls are mocked)
 wrangler.jsonc        Cloudflare Workers configuration (routes, D1 binding, non-secret vars)
-.github/workflows/    CI (lint/typecheck/test) and CD (deploy to Cloudflare on main) pipelines
+.github/workflows/    CI (lint/typecheck/test), CD (deploy to Cloudflare on main), and a manual
+                       one-time D1 database setup workflow
 AGENTS.md             Guidelines for AI coding agents working in this repository
 .github/agents/       Specialized agent personas (security, database, devops experts)
 ```
@@ -65,6 +67,27 @@ Apply migrations with:
 npm run db:migrate:local   # local dev database
 npm run db:migrate:remote  # production database
 ```
+
+### Cloudflare D1 setup (one-time)
+
+`wrangler.jsonc` ships with a placeholder `database_id` (`REPLACE_WITH_D1_DATABASE_ID`) since the
+real D1 database doesn't exist until it's created in your Cloudflare account. Deploying with the
+placeholder in place fails (see [issue #3](https://github.com/sekka1/tesla-powerwall/issues/3)), so
+this must be done once before the first deploy:
+
+1. Ensure the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repository/environment secrets are
+   set (the `production` environment used by the deploy workflow).
+2. Run the **"Setup Cloudflare D1 Database"** workflow from the Actions tab
+   (`workflow_dispatch`, no inputs required). It creates the `tesla-powerwall-db` D1 database if it
+   doesn't already exist and applies migrations to it.
+3. Copy the `database_id` printed in the workflow's "Show D1 databases" step logs into
+   `wrangler.jsonc` under `d1_databases[0].database_id`, replacing the placeholder.
+4. Replace any remaining `REPLACE_WITH_*` placeholders in `wrangler.jsonc` (including
+   `d1_databases[0].database_id`, `vars.TESLA_CLIENT_ID`, and `vars.TESLA_PUBLIC_KEY`), then
+   commit and push the change to `main` — this triggers the **Deploy** workflow, which now also verifies `wrangler.jsonc` has no leftover placeholder values (`npm run check:config`) and applies any pending migrations before deploying the Worker.
+
+You only need to repeat this if the database is ever deleted/recreated or you move to a different
+Cloudflare account.
 
 ## Testing, linting, and type-checking
 
