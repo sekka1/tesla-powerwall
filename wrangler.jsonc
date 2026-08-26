@@ -20,7 +20,7 @@
   "vars": {
     "TESLA_CLIENT_ID": "xxxx",
     "TESLA_REDIRECT_URI": "https://power.managedkube.com/auth/callback",
-    "TESLA_PUBLIC_KEY": "-----BEGIN PUBLIC KEY-----\nREPLACE_WITH_ACTUAL_PEM\n-----END PUBLIC KEY-----"
+    "TESLA_PUBLIC_KEY": "-----BEGIN PUBLIC KEY-----\nxxxx\n-----END PUBLIC KEY-----"
   },
   "observability": {
     "enabled": true,
