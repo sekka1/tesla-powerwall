@@ -14,8 +14,7 @@
     {
       "binding": "DB",
       "database_name": "tesla-powerwall-db",
-      "database_id": "REPLACE_WITH_D1_DATABASE_ID",
-      "migrations_dir": "migrations"
+      "database_id": "23790bef-3817-41cf-9028-a7ff0d1a1a9f",      "migrations_dir": "migrations"
     }
   ],
   "vars": {
