@@ -1,0 +1,44 @@
+name: Setup Cloudflare Worker
+
+# Manual, one-time (or re-runnable) workflow to create the Cloudflare Worker used by this project
+# and attach its custom domain route (`power.managedkube.com`). Run this once the
+# `power.managedkube.com` zone has already been added to the Cloudflare account and after
+# completing the "Setup Cloudflare D1 Database" workflow and filling in all remaining
+# `REPLACE_WITH_*` placeholders in wrangler.jsonc (`d1_databases[0].database_id`,
+# `vars.TESLA_CLIENT_ID`, `vars.TESLA_PUBLIC_KEY`).
+#
+# `wrangler deploy` creates the Worker (if it doesn't exist yet) and, since wrangler.jsonc already
+# defines a `routes` entry with `custom_domain: true` for power.managedkube.com, also attaches the
+# custom domain route on this first deploy. After running this workflow once, ordinary `git push`
+# to `main` will keep deploying/updating the same Worker via the "Deploy" workflow
+# (.github/workflows/deploy.yml).
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  setup-worker:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify Cloudflare configuration
+        run: npm run check:config
+
+      - name: Deploy to Cloudflare Workers
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: deploy
