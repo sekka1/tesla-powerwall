@@ -24,8 +24,8 @@ migrations/           Numbered SQL migrations applied to the Cloudflare D1 datab
 scripts/              Helper scripts (e.g. wrangler.jsonc placeholder-value check)
 tests/oauth.test.ts   Vitest + @cloudflare/vitest-pool-workers tests (Tesla API calls are mocked)
 wrangler.jsonc        Cloudflare Workers configuration (routes, D1 binding, non-secret vars)
-.github/workflows/    CI (lint/typecheck/test), CD (deploy to Cloudflare on main), and a manual
-                       one-time D1 database setup workflow
+.github/workflows/    CI (lint/typecheck/test), CD (deploy to Cloudflare on main), and manual
+                       one-time D1 database and Worker/custom-domain setup workflows
 AGENTS.md             Guidelines for AI coding agents working in this repository
 .github/agents/       Specialized agent personas (security, database, devops experts)
 ```
@@ -88,6 +88,24 @@ this must be done once before the first deploy:
 
 You only need to repeat this if the database is ever deleted/recreated or you move to a different
 Cloudflare account.
+
+### Cloudflare Worker setup (one-time)
+
+The Worker itself (and its custom domain route) is normally created on the first push-triggered
+**Deploy** run, but you can also create/attach it explicitly with a manual workflow, mirroring the
+D1 setup above:
+
+1. Complete the **Cloudflare D1 setup** above and replace all remaining `REPLACE_WITH_*`
+   placeholders in `wrangler.jsonc` (`d1_databases[0].database_id`, `vars.TESLA_CLIENT_ID`, and
+   `vars.TESLA_PUBLIC_KEY`).
+2. Ensure the `power.managedkube.com` DNS zone already exists in the Cloudflare account — the
+   custom domain attachment will fail otherwise.
+3. Run the **"Setup Cloudflare Worker"** workflow from the Actions tab (`workflow_dispatch`, no
+   inputs required). It runs `wrangler deploy`, which creates the Worker if it doesn't already
+   exist and attaches the `power.managedkube.com` custom domain route (defined in
+   `wrangler.jsonc` under `routes`) so Tesla's OAuth callback can reach it.
+4. After this, ordinary `git push` to `main` keeps deploying/updating the same Worker via the
+   **Deploy** workflow.
 
 ## Testing, linting, and type-checking
 
