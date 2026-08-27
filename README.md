@@ -2,7 +2,11 @@
 
 Tesla OAuth &amp; Public Key Worker — a Cloudflare Workers service, written in TypeScript using [Hono](https://hono.dev/), that fulfills Tesla's third-party developer registration requirements and manages the OAuth 2.0 flow for connecting Tesla Powerwall/Energy accounts.
 
-It is deployed at `https://power.managedkube.com`.
+It is deployed at `https://power.managedkube.com`. Wrangler's `workers_dev` preview URL
+(`https://<worker-name>.<subdomain>.workers.dev`) is also enabled (`workers_dev: true` in
+`wrangler.jsonc`) so the Worker is reachable there too, but only `power.managedkube.com` is
+registered with Tesla as the OAuth redirect/origin — the Tesla OAuth flow will not work from the
+`workers.dev` URL.
 
 ## What this service does
 
