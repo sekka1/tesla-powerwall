@@ -1,5 +1,19 @@
 import { describe, expect, it, vi } from 'vitest';
 import { env, SELF } from 'cloudflare:test';
+describe('/', () => {
+  it('returns the project name and status', async () => {
+    const response = await SELF.fetch('https://example.com/');
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-type')).toContain('application/json');
+    const body = await response.json();
+    expect(body).toMatchObject({
+      name: 'tesla-powerwall',
+      description: 'Tesla OAuth & Public Key Worker for Tesla Powerwall integration',
+      status: 'ok',
+    });
+  });
+});
+
 describe('.well-known public key endpoint', () => {
   it('serves the configured public key as text/plain', async () => {
     const response = await SELF.fetch('https://example.com/.well-known/appspecific/com.tesla.3p.public-key.pem');
