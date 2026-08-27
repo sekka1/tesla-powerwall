@@ -32,6 +32,14 @@ interface TeslaEnergySitesResponse {
 
 const app = new Hono<{ Bindings: Env }>();
 
+app.get('/', (c) => {
+  return c.json({
+    name: 'tesla-powerwall',
+    description: 'Tesla OAuth & Public Key Worker for Tesla Powerwall integration',
+    status: 'ok',
+  });
+});
+
 app.get('/.well-known/appspecific/com.tesla.3p.public-key.pem', (c) => {
   const publicKey = c.env.TESLA_PUBLIC_KEY;
   if (!publicKey) {
