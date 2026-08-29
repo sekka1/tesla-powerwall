@@ -2,11 +2,14 @@
 
 Tesla OAuth &amp; Public Key Worker — a Cloudflare Workers service, written in TypeScript using [Hono](https://hono.dev/), that fulfills Tesla's third-party developer registration requirements and manages the OAuth 2.0 flow for connecting Tesla Powerwall/Energy accounts.
 
-It is deployed at `https://power.managedkube.com`. Wrangler's `workers_dev` preview URL
-(`https://<worker-name>.<subdomain>.workers.dev`) is also enabled (`workers_dev: true` in
-`wrangler.jsonc`) so the Worker is reachable there too, but only `power.managedkube.com` is
-registered with Tesla as the OAuth redirect/origin — the Tesla OAuth flow will not work from the
-`workers.dev` URL.
+It is deployed at `https://tesla-powerwall.garlandk.workers.dev`. This is Cloudflare's stable
+`workers_dev` preview URL for the Worker (`https://<worker-name>.<subdomain>.workers.dev`,
+`workers_dev: true` in `wrangler.jsonc`) — it comes with a TLS cert managed by Cloudflare out of
+the box, so it's used directly instead of a custom domain. (We originally planned to use a
+subdomain of `managedkube.com`, but Cloudflare requires delegating the entire root domain to add
+it as a zone for free, which wasn't an option — see
+[issue #11](https://github.com/sekka1/tesla-powerwall/issues/11).) This `workers.dev` URL is what's
+registered with Tesla as the OAuth redirect/origin.
 
 ## What this service does
 
@@ -47,7 +50,7 @@ npm run dev                      # runs `wrangler dev`
 Non-secret configuration lives in `wrangler.jsonc` under `vars`:
 
 - `TESLA_CLIENT_ID` — Tesla developer app client id.
-- `TESLA_REDIRECT_URI` — must exactly match the redirect URI registered in the Tesla Developer Portal (`https://power.managedkube.com/auth/callback`).
+- `TESLA_REDIRECT_URI` — must exactly match the redirect URI registered in the Tesla Developer Portal (`https://tesla-powerwall.garlandk.workers.dev/auth/callback`).
 - `TESLA_PUBLIC_KEY` — the PEM-encoded public key served at the `.well-known` endpoint.
 
 Secrets must **never** be committed to source control or placed in `vars`. Set them with Wrangler or GitHub Actions secrets instead:
@@ -95,20 +98,19 @@ Cloudflare account.
 
 ### Cloudflare Worker setup (one-time)
 
-The Worker itself (and its custom domain route) is normally created on the first push-triggered
-**Deploy** run, but you can also create/attach it explicitly with a manual workflow, mirroring the
-D1 setup above:
+The Worker itself is normally created on the first push-triggered **Deploy** run, but you can also
+create it explicitly with a manual workflow, mirroring the D1 setup above:
 
 1. Complete the **Cloudflare D1 setup** above and replace all remaining `REPLACE_WITH_*`
    placeholders in `wrangler.jsonc` (`d1_databases[0].database_id`, `vars.TESLA_CLIENT_ID`, and
    `vars.TESLA_PUBLIC_KEY`).
-2. Ensure the `power.managedkube.com` DNS zone already exists in the Cloudflare account — the
-   custom domain attachment will fail otherwise.
-3. Run the **"Setup Cloudflare Worker"** workflow from the Actions tab (`workflow_dispatch`, no
+2. Run the **"Setup Cloudflare Worker"** workflow from the Actions tab (`workflow_dispatch`, no
    inputs required). It runs `wrangler deploy`, which creates the Worker if it doesn't already
-   exist and attaches the `power.managedkube.com` custom domain route (defined in
-   `wrangler.jsonc` under `routes`) so Tesla's OAuth callback can reach it.
-4. After this, ordinary `git push` to `main` keeps deploying/updating the same Worker via the
+   exist and makes it reachable at its stable `workers_dev` URL
+   (`https://tesla-powerwall.garlandk.workers.dev`, since `workers_dev: true` is set in
+   `wrangler.jsonc`) so Tesla's OAuth callback can reach it — no custom domain/DNS zone setup is
+   required.
+3. After this, ordinary `git push` to `main` keeps deploying/updating the same Worker via the
    **Deploy** workflow.
 
 ## Testing, linting, and type-checking
@@ -125,8 +127,8 @@ Tests use `@cloudflare/vitest-pool-workers`, which runs the actual Worker code (
 
 Once this Worker is deployed, configure the Tesla Developer Portal application with:
 
-- **Allowed Origin URL:** `https://power.managedkube.com`
-- **Allowed Redirect URI:** `https://power.managedkube.com/auth/callback`
+- **Allowed Origin URL:** `https://tesla-powerwall.garlandk.workers.dev`
+- **Allowed Redirect URI:** `https://tesla-powerwall.garlandk.workers.dev/auth/callback`
 
 ## Notes for future AI agents
 
