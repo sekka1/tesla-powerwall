@@ -21,7 +21,9 @@ registered with Tesla as the OAuth redirect/origin.
    - Exchanges the authorization `code` for an `access_token`/`refresh_token` via `POST https://auth.tesla.com/oauth2/v3/token`.
    - Looks up the user's `energy_site_id` via `GET /api/1/energy_sites` on Tesla's Fleet API.
    - Persists the tokens and site id in the `tesla_users` table in Cloudflare D1.
-   - Returns a simple HTML success page.
+   - Fetches `site_info` and `live_status` for that energy site and renders the site name, battery
+     charge, and solar/battery/grid power on the success page, so the OAuth flow and Fleet API
+     access can be visually verified end-to-end.
 
 ## Project layout
 

@@ -30,6 +30,35 @@ interface TeslaEnergySitesResponse {
   response?: TeslaEnergySite[];
 }
 
+interface TeslaSiteInfo {
+  site_name?: string;
+}
+
+interface TeslaSiteInfoResponse {
+  response?: TeslaSiteInfo;
+}
+
+interface TeslaLiveStatus {
+  solar_power?: number;
+  battery_power?: number;
+  grid_power?: number;
+  percentage_charged?: number;
+  grid_status?: string;
+}
+
+interface TeslaLiveStatusResponse {
+  response?: TeslaLiveStatus;
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 const app = new Hono<{ Bindings: Env }>();
 
 app.get('/', (c) => {
@@ -130,9 +159,56 @@ app.get('/auth/callback', async (c) => {
     .bind(userId, energySiteId, tokens.access_token, tokens.refresh_token, expiresAt)
     .run();
 
+  let siteInfoHtml = '<p>No energy site was found on this Tesla account.</p>';
+  if (energySiteId) {
+    const [siteInfoResponse, liveStatusResponse] = await Promise.all([
+      fetch(new URL(`/api/1/energy_sites/${energySiteId}/site_info`, apiBaseUrl).toString(), {
+        headers: { Authorization: authorizationHeader },
+      }),
+      fetch(new URL(`/api/1/energy_sites/${energySiteId}/live_status`, apiBaseUrl).toString(), {
+        headers: { Authorization: authorizationHeader },
+      }),
+    ]);
+
+    const siteInfo = siteInfoResponse.ok
+      ? ((await siteInfoResponse.json()) as TeslaSiteInfoResponse).response
+      : undefined;
+    const liveStatus = liveStatusResponse.ok
+      ? ((await liveStatusResponse.json()) as TeslaLiveStatusResponse).response
+      : undefined;
+
+    if (siteInfo || liveStatus) {
+      const rows: string[] = [];
+      if (siteInfo?.site_name) {
+        rows.push(`<li>Site name: ${escapeHtml(siteInfo.site_name)}</li>`);
+      }
+      rows.push(`<li>Energy site id: ${escapeHtml(energySiteId)}</li>`);
+      if (liveStatus?.percentage_charged !== undefined) {
+        rows.push(`<li>Battery charge: ${liveStatus.percentage_charged}%</li>`);
+      }
+      if (liveStatus?.battery_power !== undefined) {
+        rows.push(`<li>Battery power: ${liveStatus.battery_power} W</li>`);
+      }
+      if (liveStatus?.solar_power !== undefined) {
+        rows.push(`<li>Solar power: ${liveStatus.solar_power} W</li>`);
+      }
+      if (liveStatus?.grid_power !== undefined) {
+        rows.push(`<li>Grid power: ${liveStatus.grid_power} W</li>`);
+      }
+      if (liveStatus?.grid_status) {
+        rows.push(`<li>Grid status: ${escapeHtml(liveStatus.grid_status)}</li>`);
+      }
+      siteInfoHtml = `<ul>${rows.join('')}</ul>`;
+    } else {
+      siteInfoHtml = '<p>Connected, but Tesla did not return any site details yet.</p>';
+    }
+  }
+
   return c.html(
     '<!doctype html><html><head><title>Tesla Powerwall Connected</title></head>' +
-      '<body><h1>Success</h1><p>Your Tesla Powerwall account has been connected.</p></body></html>'
+      '<body><h1>Success</h1><p>Your Tesla Powerwall account has been connected.</p>' +
+      siteInfoHtml +
+      '</body></html>'
   );
 });
 

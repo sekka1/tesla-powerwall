@@ -65,6 +65,26 @@ describe('/auth/callback', () => {
           { status: 200, headers: { 'Content-Type': 'application/json' } }
         );
       }
+      if (url.includes('/api/1/energy_sites/999/site_info')) {
+        return new Response(JSON.stringify({ response: { site_name: 'Home' } }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      if (url.includes('/api/1/energy_sites/999/live_status')) {
+        return new Response(
+          JSON.stringify({
+            response: {
+              solar_power: 1500,
+              battery_power: -200,
+              grid_power: 0,
+              percentage_charged: 87.5,
+              grid_status: 'Active',
+            },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
       if (url.includes('/api/1/energy_sites')) {
         return new Response(JSON.stringify({ response: [{ energy_site_id: 999 }] }), {
           status: 200,
@@ -81,6 +101,9 @@ describe('/auth/callback', () => {
       expect(response.status).toBe(200);
       const html = await response.text();
       expect(html).toContain('Success');
+      expect(html).toContain('Home');
+      expect(html).toContain('87.5%');
+      expect(html).toContain('Active');
 
       const row = await env.DB.prepare(
         'SELECT tesla_site_id, access_token, refresh_token FROM tesla_users WHERE tesla_site_id = ?1'
