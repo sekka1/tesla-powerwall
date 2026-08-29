@@ -1,17 +1,15 @@
 name: Setup Cloudflare Worker
 
-# Manual, one-time (or re-runnable) workflow to create the Cloudflare Worker used by this project
-# and attach its custom domain route (`power.managedkube.com`). Run this once the
-# `power.managedkube.com` zone has already been added to the Cloudflare account and after
-# completing the "Setup Cloudflare D1 Database" workflow and filling in all remaining
-# `REPLACE_WITH_*` placeholders in wrangler.jsonc (`d1_databases[0].database_id`,
+# Manual, one-time (or re-runnable) workflow to create the Cloudflare Worker used by this project.
+# Run this once after completing the "Setup Cloudflare D1 Database" workflow and filling in all
+# remaining `REPLACE_WITH_*` placeholders in wrangler.jsonc (`d1_databases[0].database_id`,
 # `vars.TESLA_CLIENT_ID`, `vars.TESLA_PUBLIC_KEY`).
 #
-# `wrangler deploy` creates the Worker (if it doesn't exist yet) and, since wrangler.jsonc already
-# defines a `routes` entry with `custom_domain: true` for power.managedkube.com, also attaches the
-# custom domain route on this first deploy. After running this workflow once, ordinary `git push`
-# to `main` will keep deploying/updating the same Worker via the "Deploy" workflow
-# (.github/workflows/deploy.yml).
+# `wrangler deploy` creates the Worker (if it doesn't exist yet) and makes it reachable at its
+# stable `workers_dev` URL (`https://tesla-powerwall.garlandk.workers.dev`) since `workers_dev: true`
+# is set in wrangler.jsonc — no custom domain/DNS zone is required. After running this workflow
+# once, ordinary `git push` to `main` will keep deploying/updating the same Worker via the "Deploy"
+# workflow (.github/workflows/deploy.yml).
 on:
   workflow_dispatch: {}
 

@@ -5,12 +5,6 @@
   "compatibility_date": "2024-12-01",
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": true,
-  "routes": [
-    {
-      "pattern": "power.managedkube.com",
-      "custom_domain": true
-    }
-  ],
   "d1_databases": [
     {
       "binding": "DB",
@@ -20,7 +14,7 @@
   ],
   "vars": {
     "TESLA_CLIENT_ID": "xxxx",
-    "TESLA_REDIRECT_URI": "https://power.managedkube.com/auth/callback",
+    "TESLA_REDIRECT_URI": "https://tesla-powerwall.garlandk.workers.dev/auth/callback",
     "TESLA_PUBLIC_KEY": "-----BEGIN PUBLIC KEY-----\nxxxx\n-----END PUBLIC KEY-----"
   },
   "observability": {
