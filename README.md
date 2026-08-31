@@ -147,6 +147,40 @@ Once this Worker is deployed, configure the Tesla Developer Portal application w
 - **Allowed Origin URL:** `https://tesla-powerwall.garlandk.workers.dev`
 - **Allowed Redirect URI:** `https://tesla-powerwall.garlandk.workers.dev/auth/callback`
 
+### Completing Tesla partner registration (one-time, manual)
+
+`POST /admin/register-domain` does **not** run automatically — it is not triggered on deploy,
+startup, or any schedule. It is a manual, one-time step that an operator (you) must explicitly
+call once, after the Worker is deployed and the Tesla Developer Portal app is configured. Nothing
+in this repository calls it for you. Here's who does what:
+
+1. **You (once, via the steps above)** deploy the Worker and configure the Tesla Developer Portal
+   application (Allowed Origin URL / Allowed Redirect URI, and enabling the public key `.well-known`
+   file to be served — steps 1-3 of Tesla's registration guide).
+2. **You** set the `TESLA_DOMAIN` var in `wrangler.jsonc` to the domain you registered as the
+   Allowed Origin (e.g. `tesla-powerwall.garlandk.workers.dev`), and set a secret admin token so the
+   endpoint isn't publicly callable by anyone:
+   ```bash
+   wrangler secret put ADMIN_API_TOKEN
+   ```
+3. **You** call the endpoint once, from your own machine or CI, supplying that admin token:
+   ```bash
+   AUTH_SCHEME="Bearer"
+   curl -X POST https://tesla-powerwall.garlandk.workers.dev/admin/register-domain \
+     -H "Authorization: ${AUTH_SCHEME} ${ADMIN_API_TOKEN}"
+   ```
+4. **The Worker** (on receiving that request) does the rest automatically, in-process:
+   - Verifies the `Authorization` header matches `ADMIN_API_TOKEN`.
+   - Exchanges `TESLA_CLIENT_ID`/`TESLA_CLIENT_SECRET` for a partner token via a `client_credentials`
+     grant to Tesla's partner auth endpoint.
+   - Calls Tesla's `POST /api/1/partner_accounts` with `TESLA_DOMAIN`, completing step 4 of Tesla's
+     registration guide (the `curl` command from the Fleet API docs) on your behalf.
+   - Returns Tesla's response (success or error) directly to you, so you can confirm registration
+     succeeded.
+
+You only need to repeat step 3 if Tesla ever requires re-registering the domain (e.g. the domain
+changes, or Tesla's partner_accounts records are reset) — it is idempotent to call again.
+
 ## Notes for future AI agents
 
 - Read `AGENTS.md` before making changes — it documents security, testing, and architectural rules specific to this repository.
