@@ -12,7 +12,12 @@ export default defineWorkersConfig(async () => {
         workers: {
           wrangler: { configPath: './wrangler.jsonc' },
           miniflare: {
-            bindings: { TEST_MIGRATIONS: migrations },
+            bindings: {
+              TEST_MIGRATIONS: migrations,
+              TESLA_CLIENT_SECRET: 'test-client-secret',
+              TESLA_DOMAIN: 'tesla-powerwall.example.com',
+              ADMIN_API_TOKEN: 'test-admin-token',
+            },
           },
         },
       },

@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import { env, SELF } from 'cloudflare:test';
+
+function buildAuthHeader(token: string): string {
+  return ['Bearer', token].join(' ');
+}
+
 describe('/', () => {
   it('returns the project name and status', async () => {
     const response = await SELF.fetch('https://example.com/');
@@ -21,6 +26,63 @@ describe('.well-known public key endpoint', () => {
     expect(response.headers.get('content-type')).toContain('text/plain');
     const body = await response.text();
     expect(body).toContain('BEGIN PUBLIC KEY');
+  });
+});
+
+describe('/admin/register-domain', () => {
+  it('rejects requests without a valid admin bearer token', async () => {
+    const response = await SELF.fetch('https://example.com/admin/register-domain', {
+      method: 'POST',
+    });
+    expect(response.status).toBe(401);
+  });
+
+  it('rejects requests with an incorrect admin bearer token', async () => {
+    const response = await SELF.fetch('https://example.com/admin/register-domain', {
+      method: 'POST',
+      headers: { Authorization: buildAuthHeader('wrong-token') },
+    });
+    expect(response.status).toBe(401);
+  });
+
+  it('obtains a partner token and registers the configured domain', async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === 'string' ? input : input.toString();
+        if (url === 'https://fleet-auth.prd.vn.cloud.tesla.com/oauth2/v3/token') {
+          const body = new URLSearchParams(init?.body as string);
+          expect(body.get('grant_type')).toBe('client_credentials');
+          expect(body.get('audience')).toBe('https://fleet-api.prd.na.vn.cloud.tesla.com');
+          return new Response(JSON.stringify({ access_token: 'partner-token-value' }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        if (url === 'https://fleet-api.prd.na.vn.cloud.tesla.com/api/1/partner_accounts') {
+          expect(init?.headers).toMatchObject({ Authorization: buildAuthHeader('partner-token-value') });
+          expect(JSON.parse(init?.body as string)).toMatchObject({
+            domain: 'tesla-powerwall.example.com',
+          });
+          return new Response(JSON.stringify({ response: { domain: 'tesla-powerwall.example.com' } }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        throw new Error(`Unexpected fetch call: ${url}`);
+      });
+
+    try {
+      const response = await SELF.fetch('https://example.com/admin/register-domain', {
+        method: 'POST',
+        headers: { Authorization: buildAuthHeader('test-admin-token') },
+      });
+      expect(response.status).toBe(200);
+      const body = await response.json();
+      expect(body).toMatchObject({ response: { domain: 'tesla-powerwall.example.com' } });
+    } finally {
+      fetchSpy.mockRestore();
+    }
   });
 });
 

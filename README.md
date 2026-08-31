@@ -26,6 +26,16 @@ registered with Tesla as the OAuth redirect/origin.
    - Fetches `site_info` and `live_status` for that energy site and renders the site name, battery
      charge, and solar/battery/grid power on the success page, so the OAuth flow and Fleet API
      access can be visually verified end-to-end.
+4. **Completes step 4 of Tesla's registration ("Call the Register Endpoint")** at
+   `POST /admin/register-domain`, which:
+   - Requires the request to send an `Authorization` header equal to the configured
+     `ADMIN_API_TOKEN` value (prefixed with the standard auth scheme word), so only an
+     operator who knows the admin token can trigger registration.
+   - Obtains a partner authentication token via a `client_credentials` grant to Tesla's partner auth
+     endpoint (`https://fleet-auth.prd.vn.cloud.tesla.com/oauth2/v3/token`), scoped to `openid` with
+     `audience` set to the Fleet API base URL.
+   - Calls `POST https://fleet-api.prd.na.vn.cloud.tesla.com/api/1/partner_accounts` with the
+     configured `TESLA_DOMAIN`, and returns Tesla's response.
 
 ## Project layout
 
@@ -56,12 +66,14 @@ Non-secret configuration lives in `wrangler.jsonc` under `vars`:
 - `TESLA_CLIENT_ID` — Tesla developer app client id.
 - `TESLA_REDIRECT_URI` — must exactly match the redirect URI registered in the Tesla Developer Portal (`https://tesla-powerwall.garlandk.workers.dev/auth/callback`).
 - `TESLA_PUBLIC_KEY` — the PEM-encoded EC public key served at the `.well-known` endpoint for Tesla partner domain verification.
+- `TESLA_DOMAIN` — the root domain to register with Tesla via `POST /admin/register-domain` (must match the domain hosting the `.well-known` public key file, e.g. `tesla-powerwall.garlandk.workers.dev`).
 
 Secrets must **never** be committed to source control or placed in `vars`. Set them with Wrangler or GitHub Actions secrets instead:
 
 ```bash
 wrangler secret put TESLA_CLIENT_SECRET
 wrangler secret put PRIVATE_KEY
+wrangler secret put ADMIN_API_TOKEN
 ```
 
 CI/CD deployment requires the following GitHub Actions secrets: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `TESLA_CLIENT_SECRET`, `PRIVATE_KEY`.

@@ -55,6 +55,10 @@ interface TeslaLiveStatusResponse {
   response?: TeslaLiveStatus;
 }
 
+interface TeslaPartnerTokenResponse {
+  access_token: string;
+}
+
 function escapeHtml(value: string): string {
   return value
     .replace(/&/g, '&amp;')
@@ -80,6 +84,62 @@ app.get('/.well-known/appspecific/com.tesla.3p.public-key.pem', (c) => {
     return c.text('Public key not configured', 404);
   }
   return c.text(publicKey, 200, { 'Content-Type': 'text/plain' });
+});
+
+app.post('/admin/register-domain', async (c) => {
+  const adminToken = c.env.ADMIN_API_TOKEN;
+  if (!adminToken) {
+    return c.text('Domain registration endpoint is not configured', 500);
+  }
+
+  const authHeader = c.req.header('Authorization');
+  const expectedAuthHeader = ['Bearer', adminToken].join(' ');
+  if (authHeader !== expectedAuthHeader) {
+    return c.text('Unauthorized', 401);
+  }
+
+  const clientId = c.env.TESLA_CLIENT_ID;
+  const clientSecret = c.env.TESLA_CLIENT_SECRET;
+  const domain = c.env.TESLA_DOMAIN;
+  if (!clientId || !clientSecret || !domain) {
+    return c.text('Domain registration is not configured', 500);
+  }
+
+  const apiBaseUrl = c.env.TESLA_API_BASE_URL || DEFAULT_API_BASE_URL;
+  const partnerAuthBaseUrl = c.env.TESLA_PARTNER_AUTH_BASE_URL || DEFAULT_PARTNER_AUTH_BASE_URL;
+
+  const partnerTokenResponse = await fetch(new URL('/oauth2/v3/token', partnerAuthBaseUrl).toString(), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'client_credentials',
+      client_id: clientId,
+      client_secret: clientSecret,
+      scope: 'openid',
+      audience: apiBaseUrl,
+    }).toString(),
+  });
+
+  if (!partnerTokenResponse.ok) {
+    return c.json({ error: 'Failed to obtain partner authentication token' }, 502);
+  }
+
+  const partnerToken = (await partnerTokenResponse.json()) as TeslaPartnerTokenResponse;
+
+  const registerResponse = await fetch(new URL('/api/1/partner_accounts', apiBaseUrl).toString(), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: ['Bearer', partnerToken.access_token].join(' '),
+    },
+    body: JSON.stringify({ domain }),
+  });
+
+  const registerBody = await registerResponse.text();
+  return new Response(registerBody, {
+    status: registerResponse.status,
+    headers: { 'Content-Type': registerResponse.headers.get('Content-Type') || 'application/json' },
+  });
 });
 
 app.get('/auth/login', async (c) => {
