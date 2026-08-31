@@ -4,5 +4,6 @@
 
 TESLA_CLIENT_ID="your-tesla-client-id"
 TESLA_CLIENT_SECRET="your-tesla-client-secret"
+PRIVATE_KEY="-----BEGIN EC PRIVATE KEY-----\n...\n-----END EC PRIVATE KEY-----"
 TESLA_REDIRECT_URI="http://localhost:8787/auth/callback"
 TESLA_PUBLIC_KEY="-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----"
