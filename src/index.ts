@@ -10,11 +10,15 @@ export interface Env {
   TESLA_PUBLIC_KEY?: string;
   TESLA_AUTH_BASE_URL?: string;
   TESLA_API_BASE_URL?: string;
+  TESLA_PARTNER_AUTH_BASE_URL?: string;
+  TESLA_DOMAIN?: string;
+  ADMIN_API_TOKEN?: string;
 }
 
 const DEFAULT_SCOPE = 'openid email offline_access energy_device_data energy_cmds';
 const DEFAULT_AUTH_BASE_URL = 'https://auth.tesla.com';
 const DEFAULT_API_BASE_URL = 'https://fleet-api.prd.na.vn.cloud.tesla.com';
+const DEFAULT_PARTNER_AUTH_BASE_URL = 'https://fleet-auth.prd.vn.cloud.tesla.com';
 
 interface TeslaTokenResponse {
   access_token: string;
