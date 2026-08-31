@@ -2,6 +2,8 @@
 
 Tesla OAuth &amp; Public Key Worker — a Cloudflare Workers service, written in TypeScript using [Hono](https://hono.dev/), that fulfills Tesla's third-party developer registration requirements and manages the OAuth 2.0 flow for connecting Tesla Powerwall/Energy accounts.
 
+> **Reference:** [Tesla Fleet API — What is Fleet API?](https://developer.tesla.com/docs/fleet-api/getting-started/what-is-fleet-api) — the authoritative guide for the registration steps (public key domain verification, partner token, OAuth) implemented by this service.
+
 It is deployed at `https://tesla-powerwall.garlandk.workers.dev`. This is Cloudflare's stable
 `workers_dev` preview URL for the Worker (`https://<worker-name>.<subdomain>.workers.dev`,
 `workers_dev: true` in `wrangler.jsonc`) — it comes with a TLS cert managed by Cloudflare out of
