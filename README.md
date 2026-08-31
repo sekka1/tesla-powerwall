@@ -76,6 +76,19 @@ wrangler secret put PRIVATE_KEY
 wrangler secret put ADMIN_API_TOKEN
 ```
 
+`ADMIN_API_TOKEN` is **not** issued by Tesla or Cloudflare — it's a password you make up
+yourself, used only to protect `POST /admin/register-domain` from being called by anyone
+who finds the Worker's URL. There's nothing to "look up":
+
+1. Generate a random value yourself, e.g. `openssl rand -hex 32` (or any long random string).
+2. Store it with `wrangler secret put ADMIN_API_TOKEN` (shown above) — this uploads it to
+   Cloudflare, which stores it encrypted and never displays it again.
+3. Yes, write it down (e.g. in a password manager) — Cloudflare has no "show secret" command,
+   so if you lose it, you can't retrieve it; you'd just run `wrangler secret put ADMIN_API_TOKEN`
+   again with a new value. You need the value on hand to call `/admin/register-domain` (see
+   "Completing Tesla partner registration" below), and it's safe to rotate at any time since
+   the endpoint is only used for that one manual step, not for ongoing OAuth traffic.
+
 CI/CD deployment requires the following GitHub Actions secrets: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `TESLA_CLIENT_SECRET`, `PRIVATE_KEY`.
 
 ## Database
