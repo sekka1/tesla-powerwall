@@ -81,15 +81,19 @@ yourself, used only to protect `POST /admin/register-domain` from being called b
 who finds the Worker's URL. There's nothing to "look up":
 
 1. Generate a random value yourself, e.g. `openssl rand -hex 32` (or any long random string).
-2. Store it with `wrangler secret put ADMIN_API_TOKEN` (shown above) — this uploads it to
-   Cloudflare, which stores it encrypted and never displays it again.
+2. Store it either with `wrangler secret put ADMIN_API_TOKEN` (shown above) locally, or as the
+   `ADMIN_API_TOKEN` GitHub Actions repository/environment secret — the **Deploy** workflow pushes
+   it to the Worker via `wrangler secret put` on every deploy, so setting the GitHub Actions secret
+   is sufficient going forward. Either way, Cloudflare stores it encrypted and never displays it
+   again.
 3. Yes, write it down (e.g. in a password manager) — Cloudflare has no "show secret" command,
-   so if you lose it, you can't retrieve it; you'd just run `wrangler secret put ADMIN_API_TOKEN`
-   again with a new value. You need the value on hand to call `/admin/register-domain` (see
-   "Completing Tesla partner registration" below), and it's safe to rotate at any time since
-   the endpoint is only used for that one manual step, not for ongoing OAuth traffic.
+   so if you lose it, you can't retrieve it; you'd just set a new value (via `wrangler secret put`
+   or by updating the GitHub Actions secret). You need the value on hand to call
+   `/admin/register-domain` (see "Completing Tesla partner registration" below), and it's safe to
+   rotate at any time since the endpoint is only used for that one manual step, not for ongoing
+   OAuth traffic.
 
-CI/CD deployment requires the following GitHub Actions secrets: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `TESLA_CLIENT_SECRET`, `PRIVATE_KEY`.
+CI/CD deployment requires the following GitHub Actions secrets: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `TESLA_CLIENT_SECRET`, `PRIVATE_KEY`, `ADMIN_API_TOKEN`. The **Deploy** workflow pushes `PRIVATE_KEY` and `ADMIN_API_TOKEN` to the Worker via `wrangler secret put` on every deploy, so setting the GitHub Actions secret is enough — no manual `wrangler secret put ADMIN_API_TOKEN` is required once this is configured.
 
 ## Database
 
@@ -172,7 +176,9 @@ in this repository calls it for you. Here's who does what:
    file to be served — steps 1-3 of Tesla's registration guide).
 2. **You** set the `TESLA_DOMAIN` var in `wrangler.jsonc` to the domain you registered as the
    Allowed Origin (e.g. `tesla-powerwall.garlandk.workers.dev`), and set a secret admin token so the
-   endpoint isn't publicly callable by anyone:
+   endpoint isn't publicly callable by anyone. Either set the `ADMIN_API_TOKEN` GitHub Actions
+   repository/environment secret (the **Deploy** workflow pushes it to the Worker automatically on
+   every deploy), or set it locally for one-off deploys:
    ```bash
    wrangler secret put ADMIN_API_TOKEN
    ```
