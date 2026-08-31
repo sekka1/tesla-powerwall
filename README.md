@@ -26,6 +26,16 @@ registered with Tesla as the OAuth redirect/origin.
    - Fetches `site_info` and `live_status` for that energy site and renders the site name, battery
      charge, and solar/battery/grid power on the success page, so the OAuth flow and Fleet API
      access can be visually verified end-to-end.
+4. **Completes step 4 of Tesla's registration ("Call the Register Endpoint")** at
+   `POST /admin/register-domain`, which:
+   - Requires the request to send an `Authorization` header equal to the configured
+     `ADMIN_API_TOKEN` value (prefixed with the standard auth scheme word), so only an
+     operator who knows the admin token can trigger registration.
+   - Obtains a partner authentication token via a `client_credentials` grant to Tesla's partner auth
+     endpoint (`https://fleet-auth.prd.vn.cloud.tesla.com/oauth2/v3/token`), scoped to `openid` with
+     `audience` set to the Fleet API base URL.
+   - Calls `POST https://fleet-api.prd.na.vn.cloud.tesla.com/api/1/partner_accounts` with the
+     configured `TESLA_DOMAIN`, and returns Tesla's response.
 
 ## Project layout
 
@@ -56,15 +66,34 @@ Non-secret configuration lives in `wrangler.jsonc` under `vars`:
 - `TESLA_CLIENT_ID` — Tesla developer app client id.
 - `TESLA_REDIRECT_URI` — must exactly match the redirect URI registered in the Tesla Developer Portal (`https://tesla-powerwall.garlandk.workers.dev/auth/callback`).
 - `TESLA_PUBLIC_KEY` — the PEM-encoded EC public key served at the `.well-known` endpoint for Tesla partner domain verification.
+- `TESLA_DOMAIN` — the root domain to register with Tesla via `POST /admin/register-domain` (must match the domain hosting the `.well-known` public key file, e.g. `tesla-powerwall.garlandk.workers.dev`).
 
 Secrets must **never** be committed to source control or placed in `vars`. Set them with Wrangler or GitHub Actions secrets instead:
 
 ```bash
 wrangler secret put TESLA_CLIENT_SECRET
 wrangler secret put PRIVATE_KEY
+wrangler secret put ADMIN_API_TOKEN
 ```
 
-CI/CD deployment requires the following GitHub Actions secrets: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `TESLA_CLIENT_SECRET`, `PRIVATE_KEY`.
+`ADMIN_API_TOKEN` is **not** issued by Tesla or Cloudflare — it's a password you make up
+yourself, used only to protect `POST /admin/register-domain` from being called by anyone
+who finds the Worker's URL. There's nothing to "look up":
+
+1. Generate a random value yourself, e.g. `openssl rand -hex 32` (or any long random string).
+2. Store it either with `wrangler secret put ADMIN_API_TOKEN` (shown above) locally, or as the
+   `ADMIN_API_TOKEN` GitHub Actions repository/environment secret — the **Deploy** workflow pushes
+   it to the Worker via `wrangler secret put` on every deploy, so setting the GitHub Actions secret
+   is sufficient going forward. Either way, Cloudflare stores it encrypted and never displays it
+   again.
+3. Yes, write it down (e.g. in a password manager) — Cloudflare has no "show secret" command,
+   so if you lose it, you can't retrieve it; you'd just set a new value (via `wrangler secret put`
+   or by updating the GitHub Actions secret). You need the value on hand to call
+   `/admin/register-domain` (see "Completing Tesla partner registration" below), and it's safe to
+   rotate at any time since the endpoint is only used for that one manual step, not for ongoing
+   OAuth traffic.
+
+CI/CD deployment requires the following GitHub Actions secrets: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `TESLA_CLIENT_SECRET`, `PRIVATE_KEY`, `ADMIN_API_TOKEN`. The **Deploy** workflow pushes `PRIVATE_KEY` and `ADMIN_API_TOKEN` to the Worker via `wrangler secret put` on every deploy, so setting the GitHub Actions secret is enough — no manual `wrangler secret put ADMIN_API_TOKEN` is required once this is configured.
 
 ## Database
 
@@ -134,6 +163,42 @@ Once this Worker is deployed, configure the Tesla Developer Portal application w
 
 - **Allowed Origin URL:** `https://tesla-powerwall.garlandk.workers.dev`
 - **Allowed Redirect URI:** `https://tesla-powerwall.garlandk.workers.dev/auth/callback`
+
+### Completing Tesla partner registration (one-time, manual)
+
+`POST /admin/register-domain` does **not** run automatically — it is not triggered on deploy,
+startup, or any schedule. It is a manual, one-time step that an operator (you) must explicitly
+call once, after the Worker is deployed and the Tesla Developer Portal app is configured. Nothing
+in this repository calls it for you. Here's who does what:
+
+1. **You (once, via the steps above)** deploy the Worker and configure the Tesla Developer Portal
+   application (Allowed Origin URL / Allowed Redirect URI, and enabling the public key `.well-known`
+   file to be served — steps 1-3 of Tesla's registration guide).
+2. **You** set the `TESLA_DOMAIN` var in `wrangler.jsonc` to the domain you registered as the
+   Allowed Origin (e.g. `tesla-powerwall.garlandk.workers.dev`), and set a secret admin token so the
+   endpoint isn't publicly callable by anyone. Either set the `ADMIN_API_TOKEN` GitHub Actions
+   repository/environment secret (the **Deploy** workflow pushes it to the Worker automatically on
+   every deploy), or set it locally for one-off deploys:
+   ```bash
+   wrangler secret put ADMIN_API_TOKEN
+   ```
+3. **You** call the endpoint once, from your own machine or CI, supplying that admin token:
+   ```bash
+   AUTH_SCHEME="Bearer"
+   curl -X POST https://tesla-powerwall.garlandk.workers.dev/admin/register-domain \
+     -H "Authorization: ${AUTH_SCHEME} ${ADMIN_API_TOKEN}"
+   ```
+4. **The Worker** (on receiving that request) does the rest automatically, in-process:
+   - Verifies the `Authorization` header matches `ADMIN_API_TOKEN`.
+   - Exchanges `TESLA_CLIENT_ID`/`TESLA_CLIENT_SECRET` for a partner token via a `client_credentials`
+     grant to Tesla's partner auth endpoint.
+   - Calls Tesla's `POST /api/1/partner_accounts` with `TESLA_DOMAIN`, completing step 4 of Tesla's
+     registration guide (the `curl` command from the Fleet API docs) on your behalf.
+   - Returns Tesla's response (success or error) directly to you, so you can confirm registration
+     succeeded.
+
+You only need to repeat step 3 if Tesla ever requires re-registering the domain (e.g. the domain
+changes, or Tesla's partner_accounts records are reset) — it is idempotent to call again.
 
 ## Notes for future AI agents
 
