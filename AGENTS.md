@@ -2,6 +2,8 @@
 
 You are an automated coding agent developing and maintaining the **tesla-powerwall** OAuth &amp; Public Key Worker. This service runs on Cloudflare Workers and is responsible for Tesla's developer domain verification, the OAuth 2.0 authorization flow, and persisting Tesla Powerwall/Energy API credentials in Cloudflare D1. You must strictly adhere to the following operational, architectural, and security guidelines on every modification.
 
+> **Reference:** [Tesla Fleet API — What is Fleet API?](https://developer.tesla.com/docs/fleet-api/getting-started/what-is-fleet-api) — the authoritative guide for the registration steps (public key domain verification at step 3, partner token signing at step 4, and OAuth) that this service implements. Consult this link for authoritative context on why each route and secret exists.
+
 ## 1. Security First
 - **No Hardcoded Secrets:** Never hardcode `TESLA_CLIENT_SECRET`, access tokens, refresh tokens, or the real Tesla public key PEM in the repository. Access them via Cloudflare Worker bindings (`c.env`) configured through `wrangler secret put` (secrets) or `vars` (non-secret config).
 - **CSRF Protection:** The `state` parameter generated in `/auth/login` and validated in `/auth/callback` is the primary CSRF defense for the OAuth flow. Never remove or weaken this check, and always delete/invalidate a `state` row after it has been consumed.

@@ -4,6 +4,7 @@ export interface Env {
   DB: D1Database;
   TESLA_CLIENT_ID: string;
   TESLA_CLIENT_SECRET: string;
+  PRIVATE_KEY: string;
   TESLA_REDIRECT_URI: string;
   TESLA_SCOPE?: string;
   TESLA_PUBLIC_KEY?: string;

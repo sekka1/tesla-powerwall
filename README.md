@@ -2,6 +2,8 @@
 
 Tesla OAuth &amp; Public Key Worker — a Cloudflare Workers service, written in TypeScript using [Hono](https://hono.dev/), that fulfills Tesla's third-party developer registration requirements and manages the OAuth 2.0 flow for connecting Tesla Powerwall/Energy accounts.
 
+> **Reference:** [Tesla Fleet API — What is Fleet API?](https://developer.tesla.com/docs/fleet-api/getting-started/what-is-fleet-api) — the authoritative guide for the registration steps (public key domain verification, partner token, OAuth) implemented by this service.
+
 It is deployed at `https://tesla-powerwall.garlandk.workers.dev`. This is Cloudflare's stable
 `workers_dev` preview URL for the Worker (`https://<worker-name>.<subdomain>.workers.dev`,
 `workers_dev: true` in `wrangler.jsonc`) — it comes with a TLS cert managed by Cloudflare out of
@@ -53,15 +55,16 @@ Non-secret configuration lives in `wrangler.jsonc` under `vars`:
 
 - `TESLA_CLIENT_ID` — Tesla developer app client id.
 - `TESLA_REDIRECT_URI` — must exactly match the redirect URI registered in the Tesla Developer Portal (`https://tesla-powerwall.garlandk.workers.dev/auth/callback`).
-- `TESLA_PUBLIC_KEY` — the PEM-encoded public key served at the `.well-known` endpoint.
+- `TESLA_PUBLIC_KEY` — the PEM-encoded EC public key served at the `.well-known` endpoint for Tesla partner domain verification.
 
 Secrets must **never** be committed to source control or placed in `vars`. Set them with Wrangler or GitHub Actions secrets instead:
 
 ```bash
 wrangler secret put TESLA_CLIENT_SECRET
+wrangler secret put PRIVATE_KEY
 ```
 
-CI/CD deployment requires the following GitHub Actions secrets: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`.
+CI/CD deployment requires the following GitHub Actions secrets: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `TESLA_CLIENT_SECRET`, `PRIVATE_KEY`.
 
 ## Database
 
