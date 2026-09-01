@@ -303,7 +303,7 @@ describe('/home', () => {
     const response = await SELF.fetch('https://example.com/home');
     expect(response.status).toBe(401);
     const body = await response.text();
-    expect(body).toContain('No valid session');
+    expect(body).toContain('Unauthorized');
   });
 
   it('rejects requests with an invalid session cookie', async () => {

@@ -316,7 +316,7 @@ app.get('/home', async (c) => {
   const userId = getCookieValue(cookieHeader, 'tesla_user_id');
 
   if (!userId) {
-    return c.text('Unauthorized: No valid session found', 401);
+    return c.text('Unauthorized', 401);
   }
 
   const userRow = await c.env.DB.prepare(
@@ -326,19 +326,19 @@ app.get('/home', async (c) => {
     .first() as { id?: string; tesla_site_id?: string; access_token?: string; expires_at?: number } | undefined;
 
   if (!userRow || !userRow.access_token) {
-    return c.text('Unauthorized: Invalid session', 401);
+    return c.text('Unauthorized', 401);
   }
 
   // Check if access token has expired
   if (userRow.expires_at && userRow.expires_at < Math.floor(Date.now() / 1000)) {
-    return c.text('Unauthorized: Access token expired', 401);
+    return c.text('Unauthorized', 401);
   }
 
   const apiBaseUrl = c.env.TESLA_API_BASE_URL || DEFAULT_API_BASE_URL;
   const authorizationHeader = ['Bearer', userRow.access_token].join(' ');
 
-  // Fetch user info and region in parallel
-  const [userResponse, regionResponse, chargingHistoryResponse] = await Promise.all([
+  // Fetch all 6 API calls in parallel for optimal performance
+  const fetchPromises: Promise<Response>[] = [
     fetch(new URL('/api/1/users/me', apiBaseUrl).toString(), {
       headers: { Authorization: authorizationHeader },
     }),
@@ -348,10 +348,42 @@ app.get('/home', async (c) => {
     fetch(new URL('/api/1/charging_history', apiBaseUrl).toString(), {
       headers: { Authorization: authorizationHeader },
     }),
-  ]);
+  ];
 
-  const userInfo = userResponse.ok ? ((await userResponse.json()) as TeslaUserResponse).response : undefined;
-  const region = regionResponse.ok ? ((await regionResponse.json()) as TeslaRegionResponse).response : undefined;
+  // Add energy site API calls if site ID exists
+  if (userRow.tesla_site_id) {
+    const energySiteId = userRow.tesla_site_id;
+    fetchPromises.push(
+      fetch(new URL(`/api/1/energy_sites/${energySiteId}/site_info`, apiBaseUrl).toString(), {
+        headers: { Authorization: authorizationHeader },
+      }),
+      fetch(new URL(`/api/1/energy_sites/${energySiteId}/live_status`, apiBaseUrl).toString(), {
+        headers: { Authorization: authorizationHeader },
+      }),
+      fetch(new URL(`/api/1/energy_sites/${energySiteId}/operation`, apiBaseUrl).toString(), {
+        headers: { Authorization: authorizationHeader },
+      }),
+      fetch(new URL(`/api/1/energy_sites/${energySiteId}/time_of_use_settings`, apiBaseUrl).toString(), {
+        headers: { Authorization: authorizationHeader },
+      })
+    );
+  }
+
+  const responses = await Promise.all(fetchPromises);
+
+  // Extract responses (always 3, optionally +4 more for energy site)
+  const userResponse = responses[0] as Response;
+  const regionResponse = responses[1] as Response;
+  const chargingHistoryResponse = responses[2] as Response;
+  const siteInfoResponse = responses[3] as Response | undefined;
+  const liveStatusResponse = responses[4] as Response | undefined;
+  const operationResponse = responses[5] as Response | undefined;
+  const timeOfUseResponse = responses[6] as Response | undefined;
+
+  // Consume all response bodies to prevent resource leaks on Cloudflare Workers
+  const userInfo = userResponse.ok ? ((await userResponse.json()) as TeslaUserResponse).response : (await userResponse.text(), undefined);
+  const region = regionResponse.ok ? ((await regionResponse.json()) as TeslaRegionResponse).response : (await regionResponse.text(), undefined);
+  const chargingHistoryData = chargingHistoryResponse.ok ? ((await chargingHistoryResponse.json()) as TeslaChargingHistoryResponse).response : (await chargingHistoryResponse.text(), undefined);
 
   // Build HTML sections
   const sections: string[] = [];
@@ -386,32 +418,17 @@ app.get('/home', async (c) => {
     const energySiteId = userRow.tesla_site_id;
     sections.push('<h2>Energy Site Information</h2>');
 
-    // Fetch site info, live status, operation, and time of use settings in parallel
-    const [siteInfoResponse, liveStatusResponse, operationResponse, timeOfUseResponse] = await Promise.all([
-      fetch(new URL(`/api/1/energy_sites/${energySiteId}/site_info`, apiBaseUrl).toString(), {
-        headers: { Authorization: authorizationHeader },
-      }),
-      fetch(new URL(`/api/1/energy_sites/${energySiteId}/live_status`, apiBaseUrl).toString(), {
-        headers: { Authorization: authorizationHeader },
-      }),
-      fetch(new URL(`/api/1/energy_sites/${energySiteId}/operation`, apiBaseUrl).toString(), {
-        headers: { Authorization: authorizationHeader },
-      }),
-      fetch(new URL(`/api/1/energy_sites/${energySiteId}/time_of_use_settings`, apiBaseUrl).toString(), {
-        headers: { Authorization: authorizationHeader },
-      }),
-    ]);
-
-    const siteInfo = siteInfoResponse.ok
+    // Responses for energy site are at indices 3, 4, 5, 6 if they exist
+    const siteInfo = siteInfoResponse && siteInfoResponse.ok
       ? ((await siteInfoResponse.json()) as TeslaSiteInfoResponse).response
       : undefined;
-    const liveStatus = liveStatusResponse.ok
+    const liveStatus = liveStatusResponse && liveStatusResponse.ok
       ? ((await liveStatusResponse.json()) as TeslaLiveStatusResponse).response
       : undefined;
-    const operation = operationResponse.ok
+    const operation = operationResponse && operationResponse.ok
       ? ((await operationResponse.json()) as TeslaOperationResponse).response
       : undefined;
-    const timeOfUse = timeOfUseResponse.ok
+    const timeOfUse = timeOfUseResponse && timeOfUseResponse.ok
       ? ((await timeOfUseResponse.json()) as TeslaTimeOfUseResponse).response
       : undefined;
 
@@ -491,22 +508,18 @@ app.get('/home', async (c) => {
   }
 
   // Charging History Section
-  if (chargingHistoryResponse.ok) {
-    const chargingHistory = ((await chargingHistoryResponse.json()) as TeslaChargingHistoryResponse)
-      .response;
-    if (chargingHistory && Array.isArray(chargingHistory) && chargingHistory.length > 0) {
-      sections.push('<h2>Charging History</h2>');
-      sections.push('<table border="1" cellpadding="5" cellspacing="0">');
-      sections.push('<tr><th>Charger Name</th><th>Energy Added (kWh)</th><th>Start Battery %</th><th>End Battery %</th></tr>');
-      for (const entry of chargingHistory) {
-        const chargerName = entry.charger_name ? escapeHtml(entry.charger_name) : 'N/A';
-        const energyAdded = entry.charge_energy_added !== undefined ? entry.charge_energy_added : 'N/A';
-        const startLevel = entry.charge_start_battery_level !== undefined ? `${entry.charge_start_battery_level}%` : 'N/A';
-        const endLevel = entry.charge_end_battery_level !== undefined ? `${entry.charge_end_battery_level}%` : 'N/A';
-        sections.push(`<tr><td>${chargerName}</td><td>${energyAdded}</td><td>${startLevel}</td><td>${endLevel}</td></tr>`);
-      }
-      sections.push('</table>');
+  if (chargingHistoryData && Array.isArray(chargingHistoryData) && chargingHistoryData.length > 0) {
+    sections.push('<h2>Charging History</h2>');
+    sections.push('<table border="1" cellpadding="5" cellspacing="0">');
+    sections.push('<tr><th>Charger Name</th><th>Energy Added (kWh)</th><th>Start Battery %</th><th>End Battery %</th></tr>');
+    for (const entry of chargingHistoryData) {
+      const chargerName = entry.charger_name ? escapeHtml(entry.charger_name) : 'N/A';
+      const energyAdded = entry.charge_energy_added !== undefined ? entry.charge_energy_added : 'N/A';
+      const startLevel = entry.charge_start_battery_level !== undefined ? `${entry.charge_start_battery_level}%` : 'N/A';
+      const endLevel = entry.charge_end_battery_level !== undefined ? `${entry.charge_end_battery_level}%` : 'N/A';
+      sections.push(`<tr><td>${chargerName}</td><td>${energyAdded}</td><td>${startLevel}</td><td>${endLevel}</td></tr>`);
     }
+    sections.push('</table>');
   }
 
   const html = `<!doctype html>
