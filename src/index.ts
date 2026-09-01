@@ -342,15 +342,16 @@ app.get('/home', async (c) => {
 
   // Check if access token has expired or expiration timestamp is missing
   if (!userRow.expires_at || userRow.expires_at < Math.floor(Date.now() / 1000)) {
-    return c.text('Unauthorized', 401);
+    // Clear stale session cookie so client is properly logged out
+    const response = c.text('Unauthorized', 401);
+    response.headers.set('Set-Cookie', 'tesla_user_id=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0');
+    return response;
   }
 
   const apiBaseUrl = c.env.TESLA_API_BASE_URL || DEFAULT_API_BASE_URL;
   const authorizationHeader = ['Bearer', userRow.access_token].join(' ');
 
-  // Fetch up to 7 API calls in parallel for optimal performance
-  // (3 core + 4 conditional energy site calls if tesla_site_id exists)
-  const fetchPromises: Promise<Response>[] = [
+  const coreApiPromises: Promise<Response>[] = [
     fetch(new URL('/api/1/users/me', apiBaseUrl).toString(), {
       headers: { Authorization: authorizationHeader },
     }),
@@ -363,9 +364,10 @@ app.get('/home', async (c) => {
   ];
 
   // Add energy site API calls if site ID exists
+  const energySitePromises: Promise<Response>[] = [];
   if (userRow.tesla_site_id) {
     const energySiteId = userRow.tesla_site_id;
-    fetchPromises.push(
+    energySitePromises.push(
       fetch(new URL(`/api/1/energy_sites/${energySiteId}/site_info`, apiBaseUrl).toString(), {
         headers: { Authorization: authorizationHeader },
       }),
@@ -381,17 +383,22 @@ app.get('/home', async (c) => {
     );
   }
 
-  const responses = await Promise.all(fetchPromises);
+  // Execute all API calls in parallel
+  const [coreResponses, siteResponses] = await Promise.all([
+    Promise.all(coreApiPromises),
+    Promise.all(energySitePromises),
+  ]);
 
-  // Extract responses: always [0,1,2] for user/region/charging, 
-  // optionally [3,4,5,6] for energy site calls (if tesla_site_id exists)
-  const userResponse = responses[0] as Response;
-  const regionResponse = responses[1] as Response;
-  const chargingHistoryResponse = responses[2] as Response;
-  const siteInfoResponse = responses[3] as Response | undefined;
-  const liveStatusResponse = responses[4] as Response | undefined;
-  const operationResponse = responses[5] as Response | undefined;
-  const timeOfUseResponse = responses[6] as Response | undefined;
+  // Extract responses from core APIs (always present)
+  const userResponse = coreResponses[0];
+  const regionResponse = coreResponses[1];
+  const chargingHistoryResponse = coreResponses[2];
+
+  // Extract responses from energy site APIs (only present if tesla_site_id exists)
+  const siteInfoResponse = siteResponses[0];
+  const liveStatusResponse = siteResponses[1];
+  const operationResponse = siteResponses[2];
+  const timeOfUseResponse = siteResponses[3];
 
   // Consume all response bodies to prevent resource leaks on Cloudflare Workers
   const userInfo = await parseJsonResponse(userResponse, (body) => (body as TeslaUserResponse).response);
