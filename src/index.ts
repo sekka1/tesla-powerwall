@@ -329,8 +329,8 @@ app.get('/home', async (c) => {
     return c.text('Unauthorized', 401);
   }
 
-  // Check if access token has expired
-  if (userRow.expires_at && userRow.expires_at < Math.floor(Date.now() / 1000)) {
+  // Check if access token has expired or expiration timestamp is missing
+  if (!userRow.expires_at || userRow.expires_at < Math.floor(Date.now() / 1000)) {
     return c.text('Unauthorized', 401);
   }
 
@@ -371,7 +371,8 @@ app.get('/home', async (c) => {
 
   const responses = await Promise.all(fetchPromises);
 
-  // Extract responses (always 3, optionally +4 more for energy site)
+  // Extract responses: always [0,1,2] for user/region/charging, 
+  // optionally [3,4,5,6] for energy site calls (if tesla_site_id exists)
   const userResponse = responses[0] as Response;
   const regionResponse = responses[1] as Response;
   const chargingHistoryResponse = responses[2] as Response;
@@ -419,18 +420,19 @@ app.get('/home', async (c) => {
     sections.push('<h2>Energy Site Information</h2>');
 
     // Responses for energy site are at indices 3, 4, 5, 6 if they exist
+    // Consume all response bodies even on error to prevent resource leaks on Cloudflare Workers
     const siteInfo = siteInfoResponse && siteInfoResponse.ok
       ? ((await siteInfoResponse.json()) as TeslaSiteInfoResponse).response
-      : undefined;
+      : (siteInfoResponse ? (await siteInfoResponse.text(), undefined) : undefined);
     const liveStatus = liveStatusResponse && liveStatusResponse.ok
       ? ((await liveStatusResponse.json()) as TeslaLiveStatusResponse).response
-      : undefined;
+      : (liveStatusResponse ? (await liveStatusResponse.text(), undefined) : undefined);
     const operation = operationResponse && operationResponse.ok
       ? ((await operationResponse.json()) as TeslaOperationResponse).response
-      : undefined;
+      : (operationResponse ? (await operationResponse.text(), undefined) : undefined);
     const timeOfUse = timeOfUseResponse && timeOfUseResponse.ok
       ? ((await timeOfUseResponse.json()) as TeslaTimeOfUseResponse).response
-      : undefined;
+      : (timeOfUseResponse ? (await timeOfUseResponse.text(), undefined) : undefined);
 
     // Site Info
     if (siteInfo) {
