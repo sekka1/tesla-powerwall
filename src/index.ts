@@ -341,7 +341,8 @@ app.get('/home', async (c) => {
   }
 
   // Check if access token has expired or expiration timestamp is missing
-  if (!userRow.expires_at || userRow.expires_at < Math.floor(Date.now() / 1000)) {
+  // Use explicit null/undefined check to avoid treating 0 as missing (valid Unix timestamp for 1970-01-01)
+  if (userRow.expires_at == null || userRow.expires_at < Math.floor(Date.now() / 1000)) {
     // Clear stale session cookie so client is properly logged out
     const response = c.text('Unauthorized', 401);
     response.headers.set('Set-Cookie', 'tesla_user_id=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0');
@@ -383,22 +384,29 @@ app.get('/home', async (c) => {
     );
   }
 
-  // Execute all API calls in parallel
-  const [coreResponses, siteResponses] = await Promise.all([
-    Promise.all(coreApiPromises),
-    Promise.all(energySitePromises),
-  ]);
+  // Execute all API calls in parallel with graceful error handling
+  // Use allSettled to ensure individual API failures don't prevent other calls from completing
+  const coreSettled = await Promise.allSettled(coreApiPromises);
+  const energySiteSettled = await Promise.allSettled(energySitePromises);
 
-  // Extract responses from core APIs (always present)
-  const userResponse = coreResponses[0];
-  const regionResponse = coreResponses[1];
-  const chargingHistoryResponse = coreResponses[2];
+  // Extract responses (handle fulfilled responses, treat rejected as undefined)
+  const coreResponses = coreSettled.map(result =>
+    result.status === 'fulfilled' ? result.value : (undefined as unknown as Response)
+  );
+  const siteResponses = energySiteSettled.map(result =>
+    result.status === 'fulfilled' ? result.value : undefined
+  );
+
+  // Extract responses from core APIs (always present, but may be undefined if rejected)
+  const userResponse = coreResponses[0] as Response;
+  const regionResponse = coreResponses[1] as Response;
+  const chargingHistoryResponse = coreResponses[2] as Response;
 
   // Extract responses from energy site APIs (only present if tesla_site_id exists)
-  const siteInfoResponse = siteResponses[0];
-  const liveStatusResponse = siteResponses[1];
-  const operationResponse = siteResponses[2];
-  const timeOfUseResponse = siteResponses[3];
+  const siteInfoResponse = siteResponses[0] as Response | undefined;
+  const liveStatusResponse = siteResponses[1] as Response | undefined;
+  const operationResponse = siteResponses[2] as Response | undefined;
+  const timeOfUseResponse = siteResponses[3] as Response | undefined;
 
   // Consume all response bodies to prevent resource leaks on Cloudflare Workers
   const userInfo = await parseJsonResponse(userResponse, (body) => (body as TeslaUserResponse).response);
