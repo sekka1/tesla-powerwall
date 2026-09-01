@@ -55,8 +55,61 @@ interface TeslaLiveStatusResponse {
   response?: TeslaLiveStatus;
 }
 
+interface TeslaUserResponse {
+  response?: {
+    email?: string;
+    first_name?: string;
+    last_name?: string;
+    profile_picture_url?: string;
+  };
+}
+
+interface TeslaRegionResponse {
+  response?: string;
+}
+
+interface TeslaOperationResponse {
+  response?: {
+    mode?: string;
+    backup_reserve_percent?: number;
+  };
+}
+
+interface TeslaTimeOfUseResponse {
+  response?: {
+    optimization_strategy?: string;
+    weekday_minutes?: string;
+    weekend_minutes?: string;
+  };
+}
+
+interface TeslaChargingHistory {
+  timestamp?: number;
+  charge_energy_added?: number;
+  charger_name?: string;
+  charging_process_id?: string;
+  charge_start_battery_level?: number;
+  charge_end_battery_level?: number;
+}
+
+interface TeslaChargingHistoryResponse {
+  response?: TeslaChargingHistory[];
+}
+
 interface TeslaPartnerTokenResponse {
   access_token: string;
+}
+
+function getCookieValue(cookieHeader: string | undefined | null, name: string): string | undefined {
+  if (!cookieHeader) return undefined;
+  const cookies = cookieHeader.split(';').map(c => c.trim());
+  for (const cookie of cookies) {
+    const [cookieName, ...cookieValue] = cookie.split('=');
+    if (cookieName === name) {
+      return decodeURIComponent(cookieValue.join('='));
+    }
+  }
+  return undefined;
 }
 
 function escapeHtml(value: string): string {
@@ -66,6 +119,17 @@ function escapeHtml(value: string): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+// Helper to safely parse JSON response and drain body on error
+async function parseJsonResponse<T>(response: Response | undefined, parser: (body: unknown) => T | undefined): Promise<T | undefined> {
+  if (!response) return undefined;
+  if (response.ok) {
+    return parser(await response.json());
+  }
+  // Consume error response body to prevent resource leaks on Cloudflare Workers
+  await response.text();
+  return undefined;
 }
 
 const app = new Hono<{ Bindings: Env }>();
@@ -244,58 +308,259 @@ app.get('/auth/callback', async (c) => {
     .bind(userId, energySiteId, tokens.access_token, tokens.refresh_token, expiresAt)
     .run();
 
-  let siteInfoHtml = '<p>No energy site was found on this Tesla account.</p>';
-  if (energySiteId) {
-    const [siteInfoResponse, liveStatusResponse] = await Promise.all([
+  // Create redirect response with session cookie
+  // The session cookie contains the user's database ID (a cryptographically random UUID),
+  // which serves as an opaque session token. Since UUIDs are cryptographically random,
+  // they cannot be guessed or enumerated by attackers.
+  const response = c.redirect('/home', 302);
+  // Set HTTP-only session cookie with Path=/ to apply to entire domain
+  response.headers.set(
+    'Set-Cookie',
+    `tesla_user_id=${encodeURIComponent(userId)}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${24 * 60 * 60}`
+  );
+  return response;
+});
+
+app.get('/home', async (c) => {
+  // Get user ID from session cookie
+  const cookieHeader = c.req.header('Cookie');
+  const userId = getCookieValue(cookieHeader, 'tesla_user_id');
+
+  if (!userId) {
+    return c.text('Unauthorized', 401);
+  }
+
+  const userRow = await c.env.DB.prepare(
+    'SELECT id, tesla_site_id, access_token, expires_at FROM tesla_users WHERE id = ?1'
+  )
+    .bind(userId)
+    .first() as { id?: string; tesla_site_id?: string; access_token?: string; expires_at?: number } | undefined;
+
+  if (!userRow || !userRow.access_token) {
+    return c.text('Unauthorized', 401);
+  }
+
+  // Check if access token has expired or expiration timestamp is missing
+  // Use explicit null/undefined check to avoid treating 0 as missing (valid Unix timestamp for 1970-01-01)
+  if (userRow.expires_at == null || userRow.expires_at < Math.floor(Date.now() / 1000)) {
+    // Clear stale session cookie so client is properly logged out
+    const response = c.text('Unauthorized', 401);
+    response.headers.set('Set-Cookie', 'tesla_user_id=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0');
+    return response;
+  }
+
+  const apiBaseUrl = c.env.TESLA_API_BASE_URL || DEFAULT_API_BASE_URL;
+  const authorizationHeader = ['Bearer', userRow.access_token].join(' ');
+
+  const coreApiPromises: Promise<Response>[] = [
+    fetch(new URL('/api/1/users/me', apiBaseUrl).toString(), {
+      headers: { Authorization: authorizationHeader },
+    }),
+    fetch(new URL('/api/1/users/region', apiBaseUrl).toString(), {
+      headers: { Authorization: authorizationHeader },
+    }),
+    fetch(new URL('/api/1/charging_history', apiBaseUrl).toString(), {
+      headers: { Authorization: authorizationHeader },
+    }),
+  ];
+
+  // Add energy site API calls if site ID exists
+  const energySitePromises: Promise<Response>[] = [];
+  if (userRow.tesla_site_id) {
+    const energySiteId = userRow.tesla_site_id;
+    energySitePromises.push(
       fetch(new URL(`/api/1/energy_sites/${energySiteId}/site_info`, apiBaseUrl).toString(), {
         headers: { Authorization: authorizationHeader },
       }),
       fetch(new URL(`/api/1/energy_sites/${energySiteId}/live_status`, apiBaseUrl).toString(), {
         headers: { Authorization: authorizationHeader },
       }),
-    ]);
+      fetch(new URL(`/api/1/energy_sites/${energySiteId}/operation`, apiBaseUrl).toString(), {
+        headers: { Authorization: authorizationHeader },
+      }),
+      fetch(new URL(`/api/1/energy_sites/${energySiteId}/time_of_use_settings`, apiBaseUrl).toString(), {
+        headers: { Authorization: authorizationHeader },
+      })
+    );
+  }
 
-    const siteInfo = siteInfoResponse.ok
-      ? ((await siteInfoResponse.json()) as TeslaSiteInfoResponse).response
-      : undefined;
-    const liveStatus = liveStatusResponse.ok
-      ? ((await liveStatusResponse.json()) as TeslaLiveStatusResponse).response
-      : undefined;
+  // Execute all API calls in parallel with graceful error handling
+  // Use allSettled to ensure individual API failures don't prevent other calls from completing
+  const coreSettled = await Promise.allSettled(coreApiPromises);
+  const energySiteSettled = await Promise.allSettled(energySitePromises);
 
-    if (siteInfo || liveStatus) {
-      const rows: string[] = [];
-      if (siteInfo?.site_name) {
-        rows.push(`<li>Site name: ${escapeHtml(siteInfo.site_name)}</li>`);
+  // Extract responses (handle fulfilled responses, treat rejected as undefined)
+  const coreResponses = coreSettled.map(result =>
+    result.status === 'fulfilled' ? result.value : (undefined as unknown as Response)
+  );
+  const siteResponses = energySiteSettled.map(result =>
+    result.status === 'fulfilled' ? result.value : undefined
+  );
+
+  // Extract responses from core APIs (always present, but may be undefined if rejected)
+  const userResponse = coreResponses[0] as Response;
+  const regionResponse = coreResponses[1] as Response;
+  const chargingHistoryResponse = coreResponses[2] as Response;
+
+  // Extract responses from energy site APIs (only present if tesla_site_id exists)
+  const siteInfoResponse = siteResponses[0] as Response | undefined;
+  const liveStatusResponse = siteResponses[1] as Response | undefined;
+  const operationResponse = siteResponses[2] as Response | undefined;
+  const timeOfUseResponse = siteResponses[3] as Response | undefined;
+
+  // Consume all response bodies to prevent resource leaks on Cloudflare Workers
+  const userInfo = await parseJsonResponse(userResponse, (body) => (body as TeslaUserResponse).response);
+  const region = await parseJsonResponse(regionResponse, (body) => (body as TeslaRegionResponse).response);
+  const chargingHistoryData = await parseJsonResponse(chargingHistoryResponse, (body) => (body as TeslaChargingHistoryResponse).response);
+
+  // Build HTML sections
+  const sections: string[] = [];
+  sections.push('<h1>Tesla Energy Dashboard</h1>');
+  sections.push('<p><a href="/auth/logout">Log out</a></p>');
+
+  // User Info Section
+  if (userInfo) {
+    sections.push('<h2>User Information</h2>');
+    sections.push('<table border="1" cellpadding="5" cellspacing="0">');
+    sections.push('<tr><th>Field</th><th>Value</th></tr>');
+    if (userInfo.email) {
+      sections.push(`<tr><td>Email</td><td>${escapeHtml(userInfo.email)}</td></tr>`);
+    }
+    if (userInfo.first_name) {
+      sections.push(`<tr><td>First Name</td><td>${escapeHtml(userInfo.first_name)}</td></tr>`);
+    }
+    if (userInfo.last_name) {
+      sections.push(`<tr><td>Last Name</td><td>${escapeHtml(userInfo.last_name)}</td></tr>`);
+    }
+    sections.push('</table>');
+  }
+
+  // Region Section
+  if (region) {
+    sections.push('<h2>Region</h2>');
+    sections.push(`<p>${escapeHtml(region)}</p>`);
+  }
+
+  // Energy Site Information
+  if (userRow.tesla_site_id) {
+    const energySiteId = userRow.tesla_site_id;
+    sections.push('<h2>Energy Site Information</h2>');
+
+    // Responses for energy site are at indices 3, 4, 5, 6 if they exist
+    // Consume all response bodies even on error to prevent resource leaks on Cloudflare Workers
+    const siteInfo = await parseJsonResponse(siteInfoResponse, (body) => (body as TeslaSiteInfoResponse).response);
+    const liveStatus = await parseJsonResponse(liveStatusResponse, (body) => (body as TeslaLiveStatusResponse).response);
+    const operation = await parseJsonResponse(operationResponse, (body) => (body as TeslaOperationResponse).response);
+    const timeOfUse = await parseJsonResponse(timeOfUseResponse, (body) => (body as TeslaTimeOfUseResponse).response);
+
+    // Site Info
+    if (siteInfo) {
+      sections.push('<h3>Site Info</h3>');
+      sections.push('<table border="1" cellpadding="5" cellspacing="0">');
+      sections.push('<tr><th>Field</th><th>Value</th></tr>');
+      if (siteInfo.site_name) {
+        sections.push(`<tr><td>Site Name</td><td>${escapeHtml(siteInfo.site_name)}</td></tr>`);
       }
-      rows.push(`<li>Energy site id: ${escapeHtml(energySiteId)}</li>`);
-      if (liveStatus?.percentage_charged !== undefined) {
-        rows.push(`<li>Battery charge: ${liveStatus.percentage_charged}%</li>`);
+      sections.push(`<tr><td>Energy Site ID</td><td>${escapeHtml(energySiteId)}</td></tr>`);
+      sections.push('</table>');
+    }
+
+    // Live Status
+    if (liveStatus) {
+      sections.push('<h3>Live Status</h3>');
+      sections.push('<table border="1" cellpadding="5" cellspacing="0">');
+      sections.push('<tr><th>Field</th><th>Value</th></tr>');
+      if (liveStatus.percentage_charged !== undefined) {
+        sections.push(`<tr><td>Battery Charge</td><td>${liveStatus.percentage_charged}%</td></tr>`);
       }
-      if (liveStatus?.battery_power !== undefined) {
-        rows.push(`<li>Battery power: ${liveStatus.battery_power} W</li>`);
+      if (liveStatus.battery_power !== undefined) {
+        sections.push(`<tr><td>Battery Power</td><td>${liveStatus.battery_power} W</td></tr>`);
       }
-      if (liveStatus?.solar_power !== undefined) {
-        rows.push(`<li>Solar power: ${liveStatus.solar_power} W</li>`);
+      if (liveStatus.solar_power !== undefined) {
+        sections.push(`<tr><td>Solar Power</td><td>${liveStatus.solar_power} W</td></tr>`);
       }
-      if (liveStatus?.grid_power !== undefined) {
-        rows.push(`<li>Grid power: ${liveStatus.grid_power} W</li>`);
+      if (liveStatus.grid_power !== undefined) {
+        sections.push(`<tr><td>Grid Power</td><td>${liveStatus.grid_power} W</td></tr>`);
       }
-      if (liveStatus?.grid_status) {
-        rows.push(`<li>Grid status: ${escapeHtml(liveStatus.grid_status)}</li>`);
+      if (liveStatus.grid_status) {
+        sections.push(`<tr><td>Grid Status</td><td>${escapeHtml(liveStatus.grid_status)}</td></tr>`);
       }
-      siteInfoHtml = `<ul>${rows.join('')}</ul>`;
-    } else {
-      siteInfoHtml = '<p>Connected, but Tesla did not return any site details yet.</p>';
+      sections.push('</table>');
+    }
+
+    // Operation
+    if (operation) {
+      sections.push('<h3>Operation</h3>');
+      sections.push('<table border="1" cellpadding="5" cellspacing="0">');
+      sections.push('<tr><th>Field</th><th>Value</th></tr>');
+      if (operation.mode) {
+        sections.push(`<tr><td>Mode</td><td>${escapeHtml(operation.mode)}</td></tr>`);
+      }
+      if (operation.backup_reserve_percent !== undefined) {
+        sections.push(
+          `<tr><td>Backup Reserve</td><td>${operation.backup_reserve_percent}%</td></tr>`
+        );
+      }
+      sections.push('</table>');
+    }
+
+    // Time of Use Settings
+    if (timeOfUse) {
+      sections.push('<h3>Time of Use Settings</h3>');
+      sections.push('<table border="1" cellpadding="5" cellspacing="0">');
+      sections.push('<tr><th>Field</th><th>Value</th></tr>');
+      if (timeOfUse.optimization_strategy) {
+        sections.push(
+          `<tr><td>Optimization Strategy</td><td>${escapeHtml(timeOfUse.optimization_strategy)}</td></tr>`
+        );
+      }
+      if (timeOfUse.weekday_minutes) {
+        sections.push(
+          `<tr><td>Weekday Minutes</td><td><pre>${escapeHtml(timeOfUse.weekday_minutes)}</pre></td></tr>`
+        );
+      }
+      if (timeOfUse.weekend_minutes) {
+        sections.push(
+          `<tr><td>Weekend Minutes</td><td><pre>${escapeHtml(timeOfUse.weekend_minutes)}</pre></td></tr>`
+        );
+      }
+      sections.push('</table>');
     }
   }
 
-  return c.html(
-    '<!doctype html><html><head><title>Tesla Powerwall Connected</title></head>' +
-      '<body><h1>Success</h1><p>Your Tesla Powerwall account has been connected.</p>' +
-      siteInfoHtml +
-      '<p><a href="/auth/logout">Log out and connect a different account</a></p>' +
-      '</body></html>'
-  );
+  // Charging History Section
+  if (chargingHistoryData && Array.isArray(chargingHistoryData) && chargingHistoryData.length > 0) {
+    sections.push('<h2>Charging History</h2>');
+    sections.push('<table border="1" cellpadding="5" cellspacing="0">');
+    sections.push('<tr><th>Charger Name</th><th>Energy Added (kWh)</th><th>Start Battery %</th><th>End Battery %</th></tr>');
+    for (const entry of chargingHistoryData) {
+      const chargerName = entry.charger_name ? escapeHtml(entry.charger_name) : 'N/A';
+      const energyAdded = entry.charge_energy_added !== undefined ? entry.charge_energy_added : 'N/A';
+      const startLevel = entry.charge_start_battery_level !== undefined ? `${entry.charge_start_battery_level}%` : 'N/A';
+      const endLevel = entry.charge_end_battery_level !== undefined ? `${entry.charge_end_battery_level}%` : 'N/A';
+      sections.push(`<tr><td>${chargerName}</td><td>${energyAdded}</td><td>${startLevel}</td><td>${endLevel}</td></tr>`);
+    }
+    sections.push('</table>');
+  }
+
+  const html = `<!doctype html>
+<html>
+<head>
+  <title>Tesla Energy Dashboard</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    table { border-collapse: collapse; margin-bottom: 20px; }
+    th { background-color: #f0f0f0; text-align: left; }
+    td { padding: 8px; }
+    pre { background-color: #f5f5f5; padding: 10px; overflow-x: auto; }
+  </style>
+</head>
+<body>
+${sections.join('')}
+</body>
+</html>`;
+
+  return c.html(html);
 });
 
 export default app;
