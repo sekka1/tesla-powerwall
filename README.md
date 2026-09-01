@@ -21,11 +21,18 @@ registered with Tesla as the OAuth redirect/origin.
 3. **Handles the OAuth callback** at `GET /auth/callback`, which:
    - Validates the returned `state` against the `oauth_states` table (and deletes it once consumed, so it can only be used once).
    - Exchanges the authorization `code` for an `access_token`/`refresh_token` via `POST https://auth.tesla.com/oauth2/v3/token`.
+     If Tesla rejects the exchange (e.g. `invalid_client` because `TESLA_CLIENT_ID`/`TESLA_CLIENT_SECRET`
+     don't match what's registered in the Tesla Developer Portal), Tesla's raw error response body is
+     forwarded back as-is (with a `502` status, mirroring `/admin/register-domain` below) so the real
+     cause is visible instead of a generic message.
    - Looks up the user's `energy_site_id` via `GET /api/1/energy_sites` on Tesla's Fleet API.
    - Persists the tokens and site id in the `tesla_users` table in Cloudflare D1.
    - Fetches `site_info` and `live_status` for that energy site and renders the site name, battery
      charge, and solar/battery/grid power on the success page, so the OAuth flow and Fleet API
-     access can be visually verified end-to-end.
+     access can be visually verified end-to-end. The success page includes a "Log out and connect a
+     different account" link to `GET /auth/logout`, which simply redirects to `/auth/login` to start a
+     fresh authorization request (there's no server-side session to tear down — `/auth/login` always
+     issues a brand-new CSRF `state`, so retrying/re-logging-in doesn't require clearing anything).
 4. **Completes step 4 of Tesla's registration ("Call the Register Endpoint")** at
    `POST /admin/register-domain`, which:
    - Requires the request to send an `Authorization` header equal to the configured
