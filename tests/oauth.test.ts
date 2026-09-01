@@ -35,6 +35,9 @@ describe('/admin/register-domain', () => {
       method: 'POST',
     });
     expect(response.status).toBe(401);
+    const body = await response.text();
+    expect(body).toContain('does not use the Tesla OAuth login flow');
+    expect(body).toContain('ADMIN_API_TOKEN');
   });
 
   it('rejects requests with an incorrect admin bearer token', async () => {
