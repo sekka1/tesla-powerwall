@@ -184,7 +184,10 @@ app.get('/', (c) => {
 
 // Test error route for testing error handler - only throws when DEBUG_MODE is enabled
 app.get('/test/error', (c) => {
-  if (!c.env.DEBUG_MODE) {
+  const debugMode = c.env.DEBUG_MODE;
+  const isDebugEnabled = debugMode === 'true' || debugMode === '1' || debugMode === 'yes';
+  
+  if (!isDebugEnabled) {
     return c.text('Not Found', 404);
   }
   throw new Error('Test error: <script>alert("xss")</script>');

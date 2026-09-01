@@ -558,14 +558,14 @@ describe('Error Handler Middleware', () => {
     
     if (response.status === 500) {
       // When error is triggered (DEBUG_MODE enabled), verify escaping
-      if (responseText.includes('&lt;script&gt;')) {
-        // Verify HTML entities are used instead of raw tags
-        expect(responseText).toContain('&lt;script&gt;');
-        expect(responseText).not.toContain('<script>');
-      }
+      // Always assert that dangerous HTML tags are escaped to HTML entities
+      expect(responseText).toContain('&lt;script&gt;');
+      expect(responseText).toContain('&gt;');
+      expect(responseText).not.toContain('<script>');
+      expect(responseText).not.toContain('</script>');
     } else {
-      // Route is protected - either returns 404 or error
-      expect([404, 500]).toContain(response.status);
+      // Route is protected - returns 404 when DEBUG_MODE is not enabled
+      expect(response.status).toBe(404);
     }
   });
 });
