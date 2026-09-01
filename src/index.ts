@@ -184,14 +184,6 @@ app.get('/', (c) => {
   });
 });
 
-// Test error route for testing error handler - only throws when DEBUG_MODE is enabled
-app.get('/test/error', (c) => {
-  if (!isDebugMode(c.env)) {
-    return c.text('Not Found', 404);
-  }
-  throw new Error('Test error: <script>alert("xss")</script>');
-});
-
 app.get('/.well-known/appspecific/com.tesla.3p.public-key.pem', (c) => {
   const publicKey = c.env.TESLA_PUBLIC_KEY;
   if (!publicKey) {
