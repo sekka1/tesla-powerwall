@@ -182,9 +182,11 @@ app.get('/', (c) => {
   });
 });
 
-// Test error handler (only accessible during testing/debug mode)
-app.get('/test/error', () => {
-  // Throw an error with HTML characters to test XSS protection in error handler
+// Test error route for testing error handler - only throws when DEBUG_MODE is enabled
+app.get('/test/error', (c) => {
+  if (!c.env.DEBUG_MODE) {
+    return c.text('Not Found', 404);
+  }
   throw new Error('Test error: <script>alert("xss")</script>');
 });
 
