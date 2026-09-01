@@ -35,6 +35,8 @@ describe('/admin/register-domain', () => {
       method: 'POST',
     });
     expect(response.status).toBe(401);
+    const body = await response.text();
+    expect(body).toContain('no separate OAuth browser login step');
   });
 
   it('rejects requests with an incorrect admin bearer token', async () => {
@@ -80,6 +82,85 @@ describe('/admin/register-domain', () => {
       expect(response.status).toBe(200);
       const body = await response.json();
       expect(body).toMatchObject({ response: { domain: 'tesla-powerwall.example.com' } });
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it('returns the full Tesla partner_accounts response body on success', async () => {
+    const teslaRegisterResponse = {
+      response: {
+        client_id: 'client-id',
+        name: 'The Best Tesla Partner',
+        description: 'The very best Tesla partner',
+        domain: 'tesla-powerwall.example.com',
+        ca: null,
+        created_at: '2023-06-28T00:42:00.000Z',
+        updated_at: '2023-06-28T00:42:00.000Z',
+        enterprise_tier: 'pay_as_you_go',
+        account_id: 'account-id',
+        issuer: null,
+        csr: null,
+        csr_updated_at: null,
+        public_key: '0437d832a7a695151f5a671780a276aa4cf2d6be3b2786465397612a342fcf418e98',
+        public_key_hash: '0d3becca0faf0bc57b20ff143bc9eebf',
+      },
+    };
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(async (input: RequestInfo | URL) => {
+        const url = typeof input === 'string' ? input : input.toString();
+        if (url === 'https://fleet-auth.prd.vn.cloud.tesla.com/oauth2/v3/token') {
+          return new Response(JSON.stringify({ access_token: 'partner-token-value' }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        if (url === 'https://fleet-api.prd.na.vn.cloud.tesla.com/api/1/partner_accounts') {
+          return new Response(JSON.stringify(teslaRegisterResponse), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        throw new Error(`Unexpected fetch call: ${url}`);
+      });
+
+    try {
+      const response = await SELF.fetch('https://example.com/admin/register-domain', {
+        method: 'POST',
+        headers: { Authorization: buildAuthHeader('test-admin-token') },
+      });
+      expect(response.status).toBe(200);
+      const body = await response.json();
+      expect(body).toEqual(teslaRegisterResponse);
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it('forwards the Tesla partner-token error body when the token request fails', async () => {
+    const teslaTokenError = { error: 'invalid_client', error_description: 'Client authentication failed' };
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(async (input: RequestInfo | URL) => {
+        const url = typeof input === 'string' ? input : input.toString();
+        if (url === 'https://fleet-auth.prd.vn.cloud.tesla.com/oauth2/v3/token') {
+          return new Response(JSON.stringify(teslaTokenError), {
+            status: 401,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        throw new Error(`Unexpected fetch call: ${url}`);
+      });
+
+    try {
+      const response = await SELF.fetch('https://example.com/admin/register-domain', {
+        method: 'POST',
+        headers: { Authorization: buildAuthHeader('test-admin-token') },
+      });
+      expect(response.status).toBe(502);
+      const body = await response.json();
+      expect(body).toEqual(teslaTokenError);
     } finally {
       fetchSpy.mockRestore();
     }

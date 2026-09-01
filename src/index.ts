@@ -95,7 +95,11 @@ app.post('/admin/register-domain', async (c) => {
   const authHeader = c.req.header('Authorization');
   const expectedAuthHeader = ['Bearer', adminToken].join(' ');
   if (authHeader !== expectedAuthHeader) {
-    return c.text('Unauthorized', 401);
+    return c.text(
+      'Unauthorized: this endpoint requires a valid admin bearer credential in the ' +
+        'Authorization header — there is no separate OAuth browser login step to complete first.',
+      401,
+    );
   }
 
   const clientId = c.env.TESLA_CLIENT_ID;
@@ -121,7 +125,13 @@ app.post('/admin/register-domain', async (c) => {
   });
 
   if (!partnerTokenResponse.ok) {
-    return c.json({ error: 'Failed to obtain partner authentication token' }, 502);
+    const partnerTokenErrorBody = await partnerTokenResponse.text();
+    return new Response(partnerTokenErrorBody, {
+      status: 502,
+      headers: {
+        'Content-Type': partnerTokenResponse.headers.get('Content-Type') || 'application/json',
+      },
+    });
   }
 
   const partnerToken = (await partnerTokenResponse.json()) as TeslaPartnerTokenResponse;
