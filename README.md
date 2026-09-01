@@ -33,15 +33,16 @@ registered with Tesla as the OAuth redirect/origin.
      different account" link to `GET /auth/logout`, which simply redirects to `/auth/login` to start a
      fresh authorization request (there's no server-side session to tear down — `/auth/login` always
      issues a brand-new CSRF `state`, so retrying/re-logging-in doesn't require clearing anything).
-4. **Completes step 4 of Tesla's registration ("Call the Register Endpoint")** at
+4. **Completes step 4 of Tesla's registration ("Generate a Partner Authentication Token and Call the Register Endpoint")** at
    `POST /admin/register-domain`, which:
    - Requires the request to send an `Authorization` header equal to the configured
      `ADMIN_API_TOKEN` value (prefixed with the standard auth scheme word), so only an
      operator who knows the admin token can trigger registration.
-   - Obtains a partner authentication token via a `client_credentials` grant to Tesla's partner auth
-     endpoint (`https://fleet-auth.prd.vn.cloud.tesla.com/oauth2/v3/token`), scoped to `openid` with
-     `audience` set to the Fleet API base URL.
-   - Calls `POST https://fleet-api.prd.na.vn.cloud.tesla.com/api/1/partner_accounts` with the
+   - **Generates a partner authentication token** via a `client_credentials` OAuth 2.0 grant to Tesla's partner auth
+     endpoint (`https://fleet-auth.prd.vn.cloud.tesla.com/oauth2/v3/token`), using `TESLA_CLIENT_ID`/`TESLA_CLIENT_SECRET`
+     with `grant_type: client_credentials`, `scope: openid`, and `audience: https://fleet-api.prd.na.vn.cloud.tesla.com`.
+   - **Calls the register endpoint** with the partner token, sending
+     `POST https://fleet-api.prd.na.vn.cloud.tesla.com/api/1/partner_accounts` with the
      configured `TESLA_DOMAIN`, and returns Tesla's response.
 
 ## Project layout
@@ -171,40 +172,49 @@ Once this Worker is deployed, configure the Tesla Developer Portal application w
 - **Allowed Origin URL:** `https://tesla-powerwall.garlandk.workers.dev`
 - **Allowed Redirect URI:** `https://tesla-powerwall.garlandk.workers.dev/auth/callback`
 
+## Registration and OAuth workflow
+
+This service implements two separate workflows from Tesla's registration guide:
+
+1. **Partner registration workflow (Step 4 of Tesla's guide — one-time, manual, admin-driven):**
+   The app operator calls `/admin/register-domain` once to generate a partner authentication token and register the domain with Tesla. This happens on the operator's machine (or in CI) before any end users can log in. After this completes, Tesla recognizes the application's domain as a valid Fleet API partner account.
+
+2. **OAuth workflow (end-user login, happens after Step 4):**
+   After partner registration is complete, end users can visit `GET /auth/login` in a browser to authorize their Tesla account. This initiates an OAuth 2.0 authorization code flow with Tesla, redirects the user to Tesla's login page, and stores their credentials locally upon successful return.
+
+**Important:** Partner registration (Step 4) and the OAuth flow are entirely separate. Partner registration is a one-time prerequisite that must complete first; the OAuth flow does not automatically trigger it.
+
 ### Completing Tesla partner registration (one-time, manual)
 
 `POST /admin/register-domain` does **not** run automatically — it is not triggered on deploy,
 startup, or any schedule. It is a manual, one-time step that an operator (you) must explicitly
 call once, after the Worker is deployed and the Tesla Developer Portal app is configured. Nothing
-in this repository calls it for you. Here's who does what:
+in this repository calls it for you. Here's who does what, and in what order:
 
-1. **You (once, via the steps above)** deploy the Worker and configure the Tesla Developer Portal
-   application (Allowed Origin URL / Allowed Redirect URI, and enabling the public key `.well-known`
-   file to be served — steps 1-3 of Tesla's registration guide).
-2. **You** set the `TESLA_DOMAIN` var in `wrangler.jsonc` to the domain you registered as the
-   Allowed Origin (e.g. `tesla-powerwall.garlandk.workers.dev`), and set a secret admin token so the
-   endpoint isn't publicly callable by anyone. Either set the `ADMIN_API_TOKEN` GitHub Actions
-   repository/environment secret (the **Deploy** workflow pushes it to the Worker automatically on
-   every deploy), or set it locally for one-off deploys:
-   ```bash
-   wrangler secret put ADMIN_API_TOKEN
-   ```
-3. **You** call the endpoint once, from your own machine or CI, supplying that admin token:
+1. **You (prerequisites — done before Step 2 below)** ensure:
+   - The Worker is deployed and reachable at its stable URL (`https://tesla-powerwall.garlandk.workers.dev`).
+   - The Tesla Developer Portal application is configured with the Worker's URL as the Allowed Origin and Allowed Redirect URI.
+   - The `.well-known` public key file is being served (it is, by default — `GET /.well-known/appspecific/com.tesla.3p.public-key.pem`).
+   - The `TESLA_DOMAIN` var in `wrangler.jsonc` is set to the domain you registered (e.g. `tesla-powerwall.garlandk.workers.dev`).
+   - An `ADMIN_API_TOKEN` secret is set locally or via GitHub Actions secrets.
+
+2. **You (one-time, manual partner registration)** call the endpoint once, from your own machine or CI, supplying that admin token to generate a partner authentication token and register the domain with Tesla:
    ```bash
    AUTH_SCHEME="Bearer"
    curl -X POST https://tesla-powerwall.garlandk.workers.dev/admin/register-domain \
      -H "Authorization: ${AUTH_SCHEME} ${ADMIN_API_TOKEN}"
    ```
-4. **The Worker** (on receiving that request) does the rest automatically, in-process:
-   - Verifies the `Authorization` header matches `ADMIN_API_TOKEN`.
-   - Exchanges `TESLA_CLIENT_ID`/`TESLA_CLIENT_SECRET` for a partner token via a `client_credentials`
-     grant to Tesla's partner auth endpoint.
-   - Calls Tesla's `POST /api/1/partner_accounts` with `TESLA_DOMAIN`, completing step 4 of Tesla's
-     registration guide (the `curl` command from the Fleet API docs) on your behalf.
-   - Returns Tesla's response (success or error) directly to you, so you can confirm registration
-     succeeded.
+   This triggers Step 4 of Tesla's registration guide on your behalf.
 
-You only need to repeat step 3 if Tesla ever requires re-registering the domain (e.g. the domain
+3. **The Worker** (on receiving that request from you) does the rest automatically, in-process:
+   - Verifies the `Authorization` header matches `ADMIN_API_TOKEN`.
+   - **Generates a partner authentication token** via a `client_credentials` OAuth 2.0 grant to Tesla's partner auth endpoint, using `TESLA_CLIENT_ID` and `TESLA_CLIENT_SECRET`.
+   - **Calls Tesla's partner registration endpoint** (`POST /api/1/partner_accounts`) with `TESLA_DOMAIN`, completing Step 4 of Tesla's registration guide.
+   - Returns Tesla's response (success or error) directly to you, so you can confirm registration succeeded.
+
+4. **End users (after Step 2-3 above)** can now visit `GET /auth/login` in a browser to authorize their Tesla account via OAuth.
+
+You only need to repeat steps 1-3 if Tesla ever requires re-registering the domain (e.g. the domain
 changes, or Tesla's partner_accounts records are reset) — it is idempotent to call again.
 
 ## Notes for future AI agents
