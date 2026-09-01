@@ -320,28 +320,37 @@ app.get('/home', async (c) => {
   }
 
   const userRow = await c.env.DB.prepare(
-    'SELECT id, tesla_site_id, access_token FROM tesla_users WHERE id = ?1'
+    'SELECT id, tesla_site_id, access_token, expires_at FROM tesla_users WHERE id = ?1'
   )
     .bind(userId)
-    .first() as { id?: string; tesla_site_id?: string; access_token?: string } | undefined;
+    .first() as { id?: string; tesla_site_id?: string; access_token?: string; expires_at?: number } | undefined;
 
   if (!userRow || !userRow.access_token) {
     return c.text('Unauthorized: Invalid session', 401);
   }
 
+  // Check if access token has expired
+  if (userRow.expires_at && userRow.expires_at < Math.floor(Date.now() / 1000)) {
+    return c.text('Unauthorized: Access token expired', 401);
+  }
+
   const apiBaseUrl = c.env.TESLA_API_BASE_URL || DEFAULT_API_BASE_URL;
   const authorizationHeader = ['Bearer', userRow.access_token].join(' ');
 
-  // Fetch user info
-  const userResponse = await fetch(new URL('/api/1/users/me', apiBaseUrl).toString(), {
-    headers: { Authorization: authorizationHeader },
-  });
-  const userInfo = userResponse.ok ? ((await userResponse.json()) as TeslaUserResponse).response : undefined;
+  // Fetch user info and region in parallel
+  const [userResponse, regionResponse, chargingHistoryResponse] = await Promise.all([
+    fetch(new URL('/api/1/users/me', apiBaseUrl).toString(), {
+      headers: { Authorization: authorizationHeader },
+    }),
+    fetch(new URL('/api/1/users/region', apiBaseUrl).toString(), {
+      headers: { Authorization: authorizationHeader },
+    }),
+    fetch(new URL('/api/1/charging_history', apiBaseUrl).toString(), {
+      headers: { Authorization: authorizationHeader },
+    }),
+  ]);
 
-  // Fetch region
-  const regionResponse = await fetch(new URL('/api/1/users/region', apiBaseUrl).toString(), {
-    headers: { Authorization: authorizationHeader },
-  });
+  const userInfo = userResponse.ok ? ((await userResponse.json()) as TeslaUserResponse).response : undefined;
   const region = regionResponse.ok ? ((await regionResponse.json()) as TeslaRegionResponse).response : undefined;
 
   // Build HTML sections
@@ -482,10 +491,6 @@ app.get('/home', async (c) => {
   }
 
   // Charging History Section
-  const chargingHistoryResponse = await fetch(new URL('/api/1/charging_history', apiBaseUrl).toString(), {
-    headers: { Authorization: authorizationHeader },
-  });
-
   if (chargingHistoryResponse.ok) {
     const chargingHistory = ((await chargingHistoryResponse.json()) as TeslaChargingHistoryResponse)
       .response;
