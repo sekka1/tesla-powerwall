@@ -181,6 +181,11 @@ app.get('/', (c) => {
   });
 });
 
+// Test route for debugging error handler (only visible in development/test)
+app.get('/test/error', () => {
+  throw new Error('Test error from /test/error route');
+});
+
 app.get('/.well-known/appspecific/com.tesla.3p.public-key.pem', (c) => {
   const publicKey = c.env.TESLA_PUBLIC_KEY;
   if (!publicKey) {

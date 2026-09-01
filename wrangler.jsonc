@@ -16,8 +16,7 @@
     "TESLA_CLIENT_ID": "c57ddff0-da68-4a49-9f76-750415d87e95",
     "TESLA_REDIRECT_URI": "https://tesla-powerwall.garlandk.workers.dev/auth/callback",
     "TESLA_PUBLIC_KEY": "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEaHQs+lVCvqblLJ1/o146xTajPhex\nvMNNfZ32sfSMQ9cZcjYX3iapOwI3X7qL08tDRYNoBvX0hHO9CyxwNcaljA==\n-----END PUBLIC KEY-----",
-    "TESLA_DOMAIN": "tesla-powerwall.garlandk.workers.dev",
-    "DEBUG_MODE": "true"
+    "TESLA_DOMAIN": "tesla-powerwall.garlandk.workers.dev"
   },
   "observability": {
     "enabled": true,
