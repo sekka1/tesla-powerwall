@@ -202,7 +202,7 @@ in this repository calls it for you. Here's who does what, and in what order:
    ```bash
    AUTH_SCHEME="Bearer"
    curl -X POST https://tesla-powerwall.garlandk.workers.dev/admin/register-domain \
-    -H "Authorization: ${AUTH_SCHEME} ${ADMIN_API_TOKEN}"
+     -H "Authorization: ${AUTH_SCHEME} ${ADMIN_API_TOKEN}"
    ```
    This triggers Step 4 of Tesla's registration guide on your behalf.
 
