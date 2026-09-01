@@ -173,6 +173,10 @@ app.get('/auth/login', async (c) => {
   return c.redirect(authorizeUrl.toString(), 302);
 });
 
+app.get('/auth/logout', async (c) => {
+  return c.redirect('/auth/login', 302);
+});
+
 app.get('/auth/callback', async (c) => {
   const code = c.req.query('code');
   const state = c.req.query('state');
@@ -205,7 +209,13 @@ app.get('/auth/callback', async (c) => {
   });
 
   if (!tokenResponse.ok) {
-    return c.text('Failed to exchange authorization code for tokens', 502);
+    const tokenErrorBody = await tokenResponse.text();
+    return new Response(tokenErrorBody, {
+      status: 502,
+      headers: {
+        'Content-Type': tokenResponse.headers.get('Content-Type') || 'application/json',
+      },
+    });
   }
 
   const tokens = (await tokenResponse.json()) as TeslaTokenResponse;
@@ -283,6 +293,7 @@ app.get('/auth/callback', async (c) => {
     '<!doctype html><html><head><title>Tesla Powerwall Connected</title></head>' +
       '<body><h1>Success</h1><p>Your Tesla Powerwall account has been connected.</p>' +
       siteInfoHtml +
+      '<p><a href="/auth/logout">Log out and connect a different account</a></p>' +
       '</body></html>'
   );
 });

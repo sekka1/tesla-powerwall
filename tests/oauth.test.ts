@@ -184,6 +184,21 @@ describe('/auth/login', () => {
   });
 });
 
+describe('/auth/logout', () => {
+  it('redirects to /auth/login without disturbing other in-flight oauth states', async () => {
+    await env.DB.prepare('INSERT INTO oauth_states (state) VALUES (?1)').bind('other-users-state').run();
+
+    const response = await SELF.fetch('https://example.com/auth/logout', { redirect: 'manual' });
+    expect(response.status).toBe(302);
+    expect(response.headers.get('location')).toBe('/auth/login');
+
+    const row = await env.DB.prepare('SELECT state FROM oauth_states WHERE state = ?1')
+      .bind('other-users-state')
+      .first();
+    expect(row).toBeTruthy();
+  });
+});
+
 describe('/auth/callback', () => {
   it('rejects requests with an unknown state', async () => {
     const response = await SELF.fetch(
@@ -263,6 +278,35 @@ describe('/auth/callback', () => {
         .bind(state)
         .first();
       expect(stateRow).toBeNull();
+      expect(html).toContain('/auth/logout');
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it('forwards the Tesla token-exchange error body when the code exchange fails', async () => {
+    const state = 'test-state-error';
+    await env.DB.prepare('INSERT INTO oauth_states (state) VALUES (?1)').bind(state).run();
+
+    const teslaTokenError = { error: 'invalid_client', error_description: 'Client authentication failed' };
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.includes('/oauth2/v3/token')) {
+        return new Response(JSON.stringify(teslaTokenError), {
+          status: 401,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      throw new Error(`Unexpected fetch call: ${url}`);
+    });
+
+    try {
+      const response = await SELF.fetch(
+        `https://example.com/auth/callback?code=abc123&state=${state}`
+      );
+      expect(response.status).toBe(502);
+      const body = await response.json();
+      expect(body).toEqual(teslaTokenError);
     } finally {
       fetchSpy.mockRestore();
     }
