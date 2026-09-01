@@ -100,6 +100,18 @@ interface TeslaPartnerTokenResponse {
   access_token: string;
 }
 
+function getCookieValue(cookieHeader: string | undefined | null, name: string): string | undefined {
+  if (!cookieHeader) return undefined;
+  const cookies = cookieHeader.split(';').map(c => c.trim());
+  for (const cookie of cookies) {
+    const [cookieName, ...cookieValue] = cookie.split('=');
+    if (cookieName === name) {
+      return decodeURIComponent(cookieValue.join('='));
+    }
+  }
+  return undefined;
+}
+
 function escapeHtml(value: string): string {
   return value
     .replace(/&/g, '&amp;')
@@ -285,24 +297,33 @@ app.get('/auth/callback', async (c) => {
     .bind(userId, energySiteId, tokens.access_token, tokens.refresh_token, expiresAt)
     .run();
 
-  return c.redirect(`/home?userId=${encodeURIComponent(userId)}`, 302);
+  // Create redirect response with session cookie
+  const response = c.redirect('/home', 302);
+  // Set HTTP-only session cookie
+  response.headers.set(
+    'Set-Cookie',
+    `tesla_user_id=${encodeURIComponent(userId)}; HttpOnly; Secure; SameSite=Lax; Max-Age=${24 * 60 * 60}`
+  );
+  return response;
 });
 
 app.get('/home', async (c) => {
-  const userId = c.req.query('userId');
+  // Get user ID from session cookie
+  const cookieHeader = c.req.header('Cookie');
+  const userId = getCookieValue(cookieHeader, 'tesla_user_id');
 
   if (!userId) {
-    return c.text('Missing userId parameter', 400);
+    return c.text('Unauthorized: No valid session found', 401);
   }
 
   const userRow = await c.env.DB.prepare(
     'SELECT id, tesla_site_id, access_token FROM tesla_users WHERE id = ?1'
   )
-    .bind(userId)
+    .bind(userId ?? null)
     .first() as { id?: string; tesla_site_id?: string; access_token?: string } | undefined;
 
   if (!userRow || !userRow.access_token) {
-    return c.text('User not found or token expired', 404);
+    return c.text('Unauthorized: Invalid session', 401);
   }
 
   const apiBaseUrl = c.env.TESLA_API_BASE_URL || DEFAULT_API_BASE_URL;
@@ -472,9 +493,9 @@ app.get('/home', async (c) => {
       for (const entry of chargingHistory) {
         const chargerName = entry.charger_name ? escapeHtml(entry.charger_name) : 'N/A';
         const energyAdded = entry.charge_energy_added !== undefined ? entry.charge_energy_added : 'N/A';
-        const startLevel = entry.charge_start_battery_level !== undefined ? entry.charge_start_battery_level : 'N/A';
-        const endLevel = entry.charge_end_battery_level !== undefined ? entry.charge_end_battery_level : 'N/A';
-        sections.push(`<tr><td>${chargerName}</td><td>${energyAdded}</td><td>${startLevel}%</td><td>${endLevel}%</td></tr>`);
+        const startLevel = entry.charge_start_battery_level !== undefined ? `${entry.charge_start_battery_level}%` : 'N/A';
+        const endLevel = entry.charge_end_battery_level !== undefined ? `${entry.charge_end_battery_level}%` : 'N/A';
+        sections.push(`<tr><td>${chargerName}</td><td>${energyAdded}</td><td>${startLevel}</td><td>${endLevel}</td></tr>`);
       }
       sections.push('</table>');
     }

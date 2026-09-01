@@ -207,7 +207,7 @@ describe('/auth/callback', () => {
     expect(response.status).toBe(400);
   });
 
-  it('exchanges the code, fetches the energy site, stores tokens, and redirects to /home', async () => {
+  it('exchanges the code, fetches the energy site, stores tokens, sets session cookie, and redirects to /home', async () => {
     const state = 'test-state-123';
     await env.DB.prepare('INSERT INTO oauth_states (state) VALUES (?1)').bind(state).run();
 
@@ -239,8 +239,13 @@ describe('/auth/callback', () => {
       );
       expect(response.status).toBe(302);
       const location = response.headers.get('location');
-      expect(location).toBeTruthy();
-      expect(location).toContain('/home?userId=');
+      expect(location).toBe('/home');
+      
+      // Verify session cookie was set
+      const setCookie = response.headers.get('set-cookie');
+      expect(setCookie).toBeTruthy();
+      expect(setCookie).toContain('tesla_user_id=');
+      expect(setCookie).toContain('HttpOnly');
 
       const row = await env.DB.prepare(
         'SELECT tesla_site_id, access_token, refresh_token FROM tesla_users WHERE tesla_site_id = ?1'
@@ -292,19 +297,21 @@ describe('/auth/callback', () => {
 });
 
 describe('/home', () => {
-  it('rejects requests without a userId parameter', async () => {
+  it('rejects requests without a valid session cookie', async () => {
     const response = await SELF.fetch('https://example.com/home');
-    expect(response.status).toBe(400);
+    expect(response.status).toBe(401);
     const body = await response.text();
-    expect(body).toContain('Missing userId parameter');
+    expect(body).toContain('No valid session');
   });
 
-  it('rejects requests with a non-existent userId', async () => {
-    const response = await SELF.fetch('https://example.com/home?userId=non-existent-user');
-    expect(response.status).toBe(404);
+  it('rejects requests with an invalid session cookie', async () => {
+    const response = await SELF.fetch('https://example.com/home', {
+      headers: { 'Cookie': 'tesla_user_id=non-existent-user' },
+    });
+    expect(response.status).toBe(401);
   });
 
-  it('displays user info, region, and energy site data', async () => {
+  it('displays user info, region, and energy site data with valid session', async () => {
     const userId = 'test-user-123';
     await env.DB.prepare(
       'INSERT INTO tesla_users (id, tesla_site_id, access_token, refresh_token, expires_at) VALUES (?1, ?2, ?3, ?4, ?5)'
@@ -396,7 +403,9 @@ describe('/home', () => {
     });
 
     try {
-      const response = await SELF.fetch(`https://example.com/home?userId=${userId}`);
+      const response = await SELF.fetch('https://example.com/home', {
+        headers: { 'Cookie': `tesla_user_id=${userId}` },
+      });
       expect(response.status).toBe(200);
       const html = await response.text();
       expect(html).toContain('Tesla Energy Dashboard');
@@ -445,7 +454,9 @@ describe('/home', () => {
     });
 
     try {
-      const response = await SELF.fetch(`https://example.com/home?userId=${userId}`);
+      const response = await SELF.fetch('https://example.com/home', {
+        headers: { 'Cookie': `tesla_user_id=${userId}` },
+      });
       expect(response.status).toBe(200);
       const html = await response.text();
       expect(html).toContain('Tesla Energy Dashboard');
@@ -496,7 +507,9 @@ describe('/home', () => {
     });
 
     try {
-      const response = await SELF.fetch(`https://example.com/home?userId=${userId}`);
+      const response = await SELF.fetch('https://example.com/home', {
+        headers: { 'Cookie': `tesla_user_id=${userId}` },
+      });
       expect(response.status).toBe(200);
       const html = await response.text();
       expect(html).toContain('Tesla Energy Dashboard');
