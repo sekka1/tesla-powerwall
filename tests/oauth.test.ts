@@ -207,7 +207,7 @@ describe('/auth/callback', () => {
     expect(response.status).toBe(400);
   });
 
-  it('exchanges the code, fetches the energy site, and stores tokens', async () => {
+  it('exchanges the code, fetches the energy site, stores tokens, and redirects to /home', async () => {
     const state = 'test-state-123';
     await env.DB.prepare('INSERT INTO oauth_states (state) VALUES (?1)').bind(state).run();
 
@@ -223,26 +223,6 @@ describe('/auth/callback', () => {
           { status: 200, headers: { 'Content-Type': 'application/json' } }
         );
       }
-      if (url.includes('/api/1/energy_sites/999/site_info')) {
-        return new Response(JSON.stringify({ response: { site_name: 'Home' } }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        });
-      }
-      if (url.includes('/api/1/energy_sites/999/live_status')) {
-        return new Response(
-          JSON.stringify({
-            response: {
-              solar_power: 1500,
-              battery_power: -200,
-              grid_power: 0,
-              percentage_charged: 87.5,
-              grid_status: 'Active',
-            },
-          }),
-          { status: 200, headers: { 'Content-Type': 'application/json' } }
-        );
-      }
       if (url.includes('/api/1/energy_sites')) {
         return new Response(JSON.stringify({ response: [{ energy_site_id: 999 }] }), {
           status: 200,
@@ -254,14 +234,13 @@ describe('/auth/callback', () => {
 
     try {
       const response = await SELF.fetch(
-        `https://example.com/auth/callback?code=abc123&state=${state}`
+        `https://example.com/auth/callback?code=abc123&state=${state}`,
+        { redirect: 'manual' }
       );
-      expect(response.status).toBe(200);
-      const html = await response.text();
-      expect(html).toContain('Success');
-      expect(html).toContain('Home');
-      expect(html).toContain('87.5%');
-      expect(html).toContain('Active');
+      expect(response.status).toBe(302);
+      const location = response.headers.get('location');
+      expect(location).toBeTruthy();
+      expect(location).toContain('/home?userId=');
 
       const row = await env.DB.prepare(
         'SELECT tesla_site_id, access_token, refresh_token FROM tesla_users WHERE tesla_site_id = ?1'
@@ -278,7 +257,6 @@ describe('/auth/callback', () => {
         .bind(state)
         .first();
       expect(stateRow).toBeNull();
-      expect(html).toContain('/auth/logout');
     } finally {
       fetchSpy.mockRestore();
     }
@@ -307,6 +285,223 @@ describe('/auth/callback', () => {
       expect(response.status).toBe(502);
       const body = await response.json();
       expect(body).toEqual(teslaTokenError);
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+});
+
+describe('/home', () => {
+  it('rejects requests without a userId parameter', async () => {
+    const response = await SELF.fetch('https://example.com/home');
+    expect(response.status).toBe(400);
+    const body = await response.text();
+    expect(body).toContain('Missing userId parameter');
+  });
+
+  it('rejects requests with a non-existent userId', async () => {
+    const response = await SELF.fetch('https://example.com/home?userId=non-existent-user');
+    expect(response.status).toBe(404);
+  });
+
+  it('displays user info, region, and energy site data', async () => {
+    const userId = 'test-user-123';
+    await env.DB.prepare(
+      'INSERT INTO tesla_users (id, tesla_site_id, access_token, refresh_token, expires_at) VALUES (?1, ?2, ?3, ?4, ?5)'
+    )
+      .bind(userId, '999', 'access-token-value', 'refresh-token-value', Math.floor(Date.now() / 1000) + 3600)
+      .run();
+
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.includes('/api/1/users/me')) {
+        return new Response(
+          JSON.stringify({
+            response: {
+              email: 'test@example.com',
+              first_name: 'John',
+              last_name: 'Doe',
+            },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      if (url.includes('/api/1/users/region')) {
+        return new Response(
+          JSON.stringify({
+            response: 'US',
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      if (url.includes('/api/1/energy_sites/999/site_info')) {
+        return new Response(
+          JSON.stringify({
+            response: { site_name: 'Home' },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      if (url.includes('/api/1/energy_sites/999/live_status')) {
+        return new Response(
+          JSON.stringify({
+            response: {
+              solar_power: 1500,
+              battery_power: -200,
+              grid_power: 0,
+              percentage_charged: 87.5,
+              grid_status: 'Active',
+            },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      if (url.includes('/api/1/energy_sites/999/operation')) {
+        return new Response(
+          JSON.stringify({
+            response: {
+              mode: 'autonomous',
+              backup_reserve_percent: 20,
+            },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      if (url.includes('/api/1/energy_sites/999/time_of_use_settings')) {
+        return new Response(
+          JSON.stringify({
+            response: {
+              optimization_strategy: 'economics',
+            },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      if (url.includes('/api/1/charging_history')) {
+        return new Response(
+          JSON.stringify({
+            response: [
+              {
+                charger_name: 'Wall Connector',
+                charge_energy_added: 25.5,
+                charge_start_battery_level: 45,
+                charge_end_battery_level: 100,
+              },
+            ],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      throw new Error(`Unexpected fetch call: ${url}`);
+    });
+
+    try {
+      const response = await SELF.fetch(`https://example.com/home?userId=${userId}`);
+      expect(response.status).toBe(200);
+      const html = await response.text();
+      expect(html).toContain('Tesla Energy Dashboard');
+      expect(html).toContain('test@example.com');
+      expect(html).toContain('John');
+      expect(html).toContain('Doe');
+      expect(html).toContain('US');
+      expect(html).toContain('Home');
+      expect(html).toContain('87.5%');
+      expect(html).toContain('Active');
+      expect(html).toContain('autonomous');
+      expect(html).toContain('20%');
+      expect(html).toContain('Wall Connector');
+      expect(html).toContain('25.5');
+      expect(html).toContain('/auth/logout');
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it('displays partial information when some API endpoints fail', async () => {
+    const userId = 'test-user-partial';
+    await env.DB.prepare(
+      'INSERT INTO tesla_users (id, tesla_site_id, access_token, refresh_token, expires_at) VALUES (?1, ?2, ?3, ?4, ?5)'
+    )
+      .bind(userId, '888', 'access-token-value', 'refresh-token-value', Math.floor(Date.now() / 1000) + 3600)
+      .run();
+
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.includes('/api/1/users/me')) {
+        return new Response(
+          JSON.stringify({
+            response: {
+              email: 'partial@example.com',
+            },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      // All other endpoints return errors
+      return new Response(JSON.stringify({ error: 'Not found' }), {
+        status: 404,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+
+    try {
+      const response = await SELF.fetch(`https://example.com/home?userId=${userId}`);
+      expect(response.status).toBe(200);
+      const html = await response.text();
+      expect(html).toContain('Tesla Energy Dashboard');
+      expect(html).toContain('partial@example.com');
+      expect(html).toContain('/auth/logout');
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it('handles users without an energy site ID', async () => {
+    const userId = 'test-user-no-site';
+    await env.DB.prepare(
+      'INSERT INTO tesla_users (id, tesla_site_id, access_token, refresh_token, expires_at) VALUES (?1, ?2, ?3, ?4, ?5)'
+    )
+      .bind(userId, null, 'access-token-value', 'refresh-token-value', Math.floor(Date.now() / 1000) + 3600)
+      .run();
+
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.includes('/api/1/users/me')) {
+        return new Response(
+          JSON.stringify({
+            response: {
+              email: 'nosite@example.com',
+            },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      if (url.includes('/api/1/users/region')) {
+        return new Response(
+          JSON.stringify({
+            response: 'US',
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      if (url.includes('/api/1/charging_history')) {
+        return new Response(
+          JSON.stringify({
+            response: [],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      throw new Error(`Unexpected fetch call: ${url}`);
+    });
+
+    try {
+      const response = await SELF.fetch(`https://example.com/home?userId=${userId}`);
+      expect(response.status).toBe(200);
+      const html = await response.text();
+      expect(html).toContain('Tesla Energy Dashboard');
+      expect(html).toContain('nosite@example.com');
+      expect(html).toContain('US');
     } finally {
       fetchSpy.mockRestore();
     }
