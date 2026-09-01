@@ -125,7 +125,13 @@ app.post('/admin/register-domain', async (c) => {
   });
 
   if (!partnerTokenResponse.ok) {
-    return c.json({ error: 'Failed to obtain partner authentication token' }, 502);
+    const partnerTokenErrorBody = await partnerTokenResponse.text();
+    return new Response(partnerTokenErrorBody, {
+      status: 502,
+      headers: {
+        'Content-Type': partnerTokenResponse.headers.get('Content-Type') || 'application/json',
+      },
+    });
   }
 
   const partnerToken = (await partnerTokenResponse.json()) as TeslaPartnerTokenResponse;
