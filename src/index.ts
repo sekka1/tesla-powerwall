@@ -123,6 +123,11 @@ function escapeHtml(value: string): string {
     .replace(/'/g, '&#39;');
 }
 
+function isDebugMode(env: Env): boolean {
+  const debugMode = env.DEBUG_MODE;
+  return debugMode === 'true' || debugMode === '1' || debugMode === 'yes';
+}
+
 // Helper to safely parse JSON response and drain body on error
 async function parseJsonResponse<T>(response: Response | undefined, parser: (body: unknown) => T | undefined): Promise<T | undefined> {
   if (!response) return undefined;
@@ -138,10 +143,7 @@ const app = new Hono<{ Bindings: Env }>();
 
 // Error handling middleware - catches uncaught exceptions and returns them in debug mode
 app.onError((err, c) => {
-  const debugMode = c.env.DEBUG_MODE;
-  const isDebugEnabled = debugMode === 'true' || debugMode === '1' || debugMode === 'yes';
-  
-  if (isDebugEnabled) {
+  if (isDebugMode(c.env)) {
     const errorMessage = err instanceof Error ? err.message : String(err);
     const errorStack = (err instanceof Error && err.stack) ? err.stack : 'No stack trace available';
     
@@ -184,10 +186,7 @@ app.get('/', (c) => {
 
 // Test error route for testing error handler - only throws when DEBUG_MODE is enabled
 app.get('/test/error', (c) => {
-  const debugMode = c.env.DEBUG_MODE;
-  const isDebugEnabled = debugMode === 'true' || debugMode === '1' || debugMode === 'yes';
-  
-  if (!isDebugEnabled) {
+  if (!isDebugMode(c.env)) {
     return c.text('Not Found', 404);
   }
   throw new Error('Test error: <script>alert("xss")</script>');
