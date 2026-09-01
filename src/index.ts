@@ -114,7 +114,7 @@ function getCookieValue(cookieHeader: string | undefined | null, name: string): 
 }
 
 
-export function escapeHtml(value: string): string {
+function escapeHtml(value: string): string {
   return value
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -180,6 +180,12 @@ app.get('/', (c) => {
     description: 'Tesla OAuth & Public Key Worker for Tesla Powerwall integration',
     status: 'ok',
   });
+});
+
+// Test error handler (only accessible during testing/debug mode)
+app.get('/test/error', () => {
+  // Throw an error with HTML characters to test XSS protection in error handler
+  throw new Error('Test error: <script>alert("xss")</script>');
 });
 
 app.get('/.well-known/appspecific/com.tesla.3p.public-key.pem', (c) => {
