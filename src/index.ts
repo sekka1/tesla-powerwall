@@ -298,6 +298,9 @@ app.get('/auth/callback', async (c) => {
     .run();
 
   // Create redirect response with session cookie
+  // The session cookie contains the user's database ID (a cryptographically random UUID),
+  // which serves as an opaque session token. Since UUIDs are cryptographically random,
+  // they cannot be guessed or enumerated by attackers.
   const response = c.redirect('/home', 302);
   // Set HTTP-only session cookie
   response.headers.set(
@@ -319,7 +322,7 @@ app.get('/home', async (c) => {
   const userRow = await c.env.DB.prepare(
     'SELECT id, tesla_site_id, access_token FROM tesla_users WHERE id = ?1'
   )
-    .bind(userId ?? null)
+    .bind(userId)
     .first() as { id?: string; tesla_site_id?: string; access_token?: string } | undefined;
 
   if (!userRow || !userRow.access_token) {

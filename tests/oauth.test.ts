@@ -246,6 +246,8 @@ describe('/auth/callback', () => {
       expect(setCookie).toBeTruthy();
       expect(setCookie).toContain('tesla_user_id=');
       expect(setCookie).toContain('HttpOnly');
+      expect(setCookie).toContain('Secure');
+      expect(setCookie).toContain('SameSite=Lax');
 
       const row = await env.DB.prepare(
         'SELECT tesla_site_id, access_token, refresh_token FROM tesla_users WHERE tesla_site_id = ?1'
