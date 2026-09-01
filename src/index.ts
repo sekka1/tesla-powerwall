@@ -121,6 +121,11 @@ function escapeHtml(value: string): string {
     .replace(/'/g, '&#39;');
 }
 
+// Consume response body and return undefined (for error cases)
+async function consumeResponseBody(): Promise<undefined> {
+  return undefined;
+}
+
 const app = new Hono<{ Bindings: Env }>();
 
 app.get('/', (c) => {
@@ -302,10 +307,10 @@ app.get('/auth/callback', async (c) => {
   // which serves as an opaque session token. Since UUIDs are cryptographically random,
   // they cannot be guessed or enumerated by attackers.
   const response = c.redirect('/home', 302);
-  // Set HTTP-only session cookie
+  // Set HTTP-only session cookie with Path=/ to apply to entire domain
   response.headers.set(
     'Set-Cookie',
-    `tesla_user_id=${encodeURIComponent(userId)}; HttpOnly; Secure; SameSite=Lax; Max-Age=${24 * 60 * 60}`
+    `tesla_user_id=${encodeURIComponent(userId)}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${24 * 60 * 60}`
   );
   return response;
 });
@@ -337,7 +342,8 @@ app.get('/home', async (c) => {
   const apiBaseUrl = c.env.TESLA_API_BASE_URL || DEFAULT_API_BASE_URL;
   const authorizationHeader = ['Bearer', userRow.access_token].join(' ');
 
-  // Fetch all 6 API calls in parallel for optimal performance
+  // Fetch up to 7 API calls in parallel for optimal performance
+  // (3 core + 4 conditional energy site calls if tesla_site_id exists)
   const fetchPromises: Promise<Response>[] = [
     fetch(new URL('/api/1/users/me', apiBaseUrl).toString(), {
       headers: { Authorization: authorizationHeader },
@@ -382,9 +388,9 @@ app.get('/home', async (c) => {
   const timeOfUseResponse = responses[6] as Response | undefined;
 
   // Consume all response bodies to prevent resource leaks on Cloudflare Workers
-  const userInfo = userResponse.ok ? ((await userResponse.json()) as TeslaUserResponse).response : (await userResponse.text(), undefined);
-  const region = regionResponse.ok ? ((await regionResponse.json()) as TeslaRegionResponse).response : (await regionResponse.text(), undefined);
-  const chargingHistoryData = chargingHistoryResponse.ok ? ((await chargingHistoryResponse.json()) as TeslaChargingHistoryResponse).response : (await chargingHistoryResponse.text(), undefined);
+  const userInfo = userResponse.ok ? ((await userResponse.json()) as TeslaUserResponse).response : (await userResponse.text(), await consumeResponseBody());
+  const region = regionResponse.ok ? ((await regionResponse.json()) as TeslaRegionResponse).response : (await regionResponse.text(), await consumeResponseBody());
+  const chargingHistoryData = chargingHistoryResponse.ok ? ((await chargingHistoryResponse.json()) as TeslaChargingHistoryResponse).response : (await chargingHistoryResponse.text(), await consumeResponseBody());
 
   // Build HTML sections
   const sections: string[] = [];
@@ -423,16 +429,16 @@ app.get('/home', async (c) => {
     // Consume all response bodies even on error to prevent resource leaks on Cloudflare Workers
     const siteInfo = siteInfoResponse && siteInfoResponse.ok
       ? ((await siteInfoResponse.json()) as TeslaSiteInfoResponse).response
-      : (siteInfoResponse ? (await siteInfoResponse.text(), undefined) : undefined);
+      : (siteInfoResponse ? (await siteInfoResponse.text(), await consumeResponseBody()) : undefined);
     const liveStatus = liveStatusResponse && liveStatusResponse.ok
       ? ((await liveStatusResponse.json()) as TeslaLiveStatusResponse).response
-      : (liveStatusResponse ? (await liveStatusResponse.text(), undefined) : undefined);
+      : (liveStatusResponse ? (await liveStatusResponse.text(), await consumeResponseBody()) : undefined);
     const operation = operationResponse && operationResponse.ok
       ? ((await operationResponse.json()) as TeslaOperationResponse).response
-      : (operationResponse ? (await operationResponse.text(), undefined) : undefined);
+      : (operationResponse ? (await operationResponse.text(), await consumeResponseBody()) : undefined);
     const timeOfUse = timeOfUseResponse && timeOfUseResponse.ok
       ? ((await timeOfUseResponse.json()) as TeslaTimeOfUseResponse).response
-      : (timeOfUseResponse ? (await timeOfUseResponse.text(), undefined) : undefined);
+      : (timeOfUseResponse ? (await timeOfUseResponse.text(), await consumeResponseBody()) : undefined);
 
     // Site Info
     if (siteInfo) {
