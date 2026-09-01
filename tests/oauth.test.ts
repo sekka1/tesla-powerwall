@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { env, SELF } from 'cloudflare:test';
+import { escapeHtml } from '../src/index';
 
 function buildAuthHeader(token: string): string {
   return ['Bearer', token].join(' ');
@@ -541,15 +542,16 @@ describe('Error Handler Middleware', () => {
     // error messages before including them in HTML responses. This prevents
     // XSS attacks even if error messages contain user-controlled content.
     const testString = '<script>alert("xss")</script>';
-    const escaped = testString
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
+    const escaped = escapeHtml(testString);
     
+    // Verify dangerous HTML characters are escaped
     expect(escaped).not.toContain('<script>');
+    expect(escaped).not.toContain('</script>');
     expect(escaped).toContain('&lt;script&gt;');
+    expect(escaped).toContain('&lt;/script&gt;');
+    expect(escaped).toContain('&quot;');
+    // Verify the escaped string is safe to embed in HTML
+    expect(escaped).toBe('&lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt;');
   });
 
   it('returns 200 status for valid routes regardless of error handling configuration', async () => {

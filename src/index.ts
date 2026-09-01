@@ -113,7 +113,8 @@ function getCookieValue(cookieHeader: string | undefined | null, name: string): 
   return undefined;
 }
 
-function escapeHtml(value: string): string {
+
+export function escapeHtml(value: string): string {
   return value
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
