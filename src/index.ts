@@ -96,9 +96,8 @@ app.post('/admin/register-domain', async (c) => {
   const expectedAuthHeader = ['Bearer', adminToken].join(' ');
   if (authHeader !== expectedAuthHeader) {
     return c.text(
-      'Unauthorized: this endpoint does not use the Tesla OAuth login flow, so there is no ' +
-        'browser login step to complete first. Send the ADMIN_API_TOKEN value as the ' +
-        'Authorization request header, prefixed with "Bearer ".',
+      'Unauthorized: this endpoint requires a valid admin bearer credential in the ' +
+        'Authorization header — there is no separate OAuth browser login step to complete first.',
       401,
     );
   }
