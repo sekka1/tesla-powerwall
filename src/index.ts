@@ -121,8 +121,14 @@ function escapeHtml(value: string): string {
     .replace(/'/g, '&#39;');
 }
 
-// Consume response body and return undefined (for error cases)
-async function consumeResponseBody(): Promise<undefined> {
+// Helper to safely parse JSON response and drain body on error
+async function parseJsonResponse<T>(response: Response | undefined, parser: (body: unknown) => T | undefined): Promise<T | undefined> {
+  if (!response) return undefined;
+  if (response.ok) {
+    return parser(await response.json());
+  }
+  // Consume error response body to prevent resource leaks on Cloudflare Workers
+  await response.text();
   return undefined;
 }
 
@@ -388,9 +394,9 @@ app.get('/home', async (c) => {
   const timeOfUseResponse = responses[6] as Response | undefined;
 
   // Consume all response bodies to prevent resource leaks on Cloudflare Workers
-  const userInfo = userResponse.ok ? ((await userResponse.json()) as TeslaUserResponse).response : (await userResponse.text(), await consumeResponseBody());
-  const region = regionResponse.ok ? ((await regionResponse.json()) as TeslaRegionResponse).response : (await regionResponse.text(), await consumeResponseBody());
-  const chargingHistoryData = chargingHistoryResponse.ok ? ((await chargingHistoryResponse.json()) as TeslaChargingHistoryResponse).response : (await chargingHistoryResponse.text(), await consumeResponseBody());
+  const userInfo = await parseJsonResponse(userResponse, (body) => (body as TeslaUserResponse).response);
+  const region = await parseJsonResponse(regionResponse, (body) => (body as TeslaRegionResponse).response);
+  const chargingHistoryData = await parseJsonResponse(chargingHistoryResponse, (body) => (body as TeslaChargingHistoryResponse).response);
 
   // Build HTML sections
   const sections: string[] = [];
@@ -427,18 +433,10 @@ app.get('/home', async (c) => {
 
     // Responses for energy site are at indices 3, 4, 5, 6 if they exist
     // Consume all response bodies even on error to prevent resource leaks on Cloudflare Workers
-    const siteInfo = siteInfoResponse && siteInfoResponse.ok
-      ? ((await siteInfoResponse.json()) as TeslaSiteInfoResponse).response
-      : (siteInfoResponse ? (await siteInfoResponse.text(), await consumeResponseBody()) : undefined);
-    const liveStatus = liveStatusResponse && liveStatusResponse.ok
-      ? ((await liveStatusResponse.json()) as TeslaLiveStatusResponse).response
-      : (liveStatusResponse ? (await liveStatusResponse.text(), await consumeResponseBody()) : undefined);
-    const operation = operationResponse && operationResponse.ok
-      ? ((await operationResponse.json()) as TeslaOperationResponse).response
-      : (operationResponse ? (await operationResponse.text(), await consumeResponseBody()) : undefined);
-    const timeOfUse = timeOfUseResponse && timeOfUseResponse.ok
-      ? ((await timeOfUseResponse.json()) as TeslaTimeOfUseResponse).response
-      : (timeOfUseResponse ? (await timeOfUseResponse.text(), await consumeResponseBody()) : undefined);
+    const siteInfo = await parseJsonResponse(siteInfoResponse, (body) => (body as TeslaSiteInfoResponse).response);
+    const liveStatus = await parseJsonResponse(liveStatusResponse, (body) => (body as TeslaLiveStatusResponse).response);
+    const operation = await parseJsonResponse(operationResponse, (body) => (body as TeslaOperationResponse).response);
+    const timeOfUse = await parseJsonResponse(timeOfUseResponse, (body) => (body as TeslaTimeOfUseResponse).response);
 
     // Site Info
     if (siteInfo) {
