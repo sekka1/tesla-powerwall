@@ -114,8 +114,18 @@ function getCookieValue(cookieHeader: string | undefined | null, name: string): 
 }
 
 
-function escapeHtml(value: string): string {
-  return value
+function escapeHtml(value: unknown): string {
+  let stringValue: string;
+  if (typeof value === 'string') {
+    stringValue = value;
+  } else if (value === null) {
+    stringValue = 'null';
+  } else if (value === undefined) {
+    stringValue = 'undefined';
+  } else {
+    stringValue = JSON.stringify(value);
+  }
+  return stringValue
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
