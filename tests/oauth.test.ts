@@ -339,7 +339,10 @@ describe('/home', () => {
       if (url.includes('/api/1/users/region')) {
         return new Response(
           JSON.stringify({
-            response: 'US',
+            response: {
+              region: 'US',
+              fleet_api_base_url: 'https://fleet-api.prd.na.vn.cloud.tesla.com',
+            },
           }),
           { status: 200, headers: { 'Content-Type': 'application/json' } }
         );
@@ -493,7 +496,10 @@ describe('/home', () => {
       if (url.includes('/api/1/users/region')) {
         return new Response(
           JSON.stringify({
-            response: 'US',
+            response: {
+              region: 'US',
+              fleet_api_base_url: 'https://fleet-api.prd.na.vn.cloud.tesla.com',
+            },
           }),
           { status: 200, headers: { 'Content-Type': 'application/json' } }
         );
