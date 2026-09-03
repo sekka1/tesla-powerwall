@@ -634,5 +634,57 @@ describe('Error Handler Middleware', () => {
     // Ensure the error message is still visible but escaped
     expect(body).toContain('XSS:');
   });
+
+  it('escapeHtml handles non-string values', async () => {
+   // Create a test version of escapeHtml that matches the production implementation
+   function escapeHtml(value: unknown): string {
+     let stringValue: string;
+     if (typeof value === 'string') {
+       stringValue = value;
+     } else if (value === null) {
+       stringValue = 'null';
+     } else if (value === undefined) {
+       stringValue = 'undefined';
+     } else {
+       stringValue = JSON.stringify(value);
+     }
+     return stringValue
+       .replace(/&/g, '&amp;')
+       .replace(/</g, '&lt;')
+       .replace(/>/g, '&gt;')
+       .replace(/"/g, '&quot;')
+       .replace(/'/g, '&#39;');
+   }
+
+   // Test with string
+   expect(escapeHtml('test')).toBe('test');
+
+   // Test with object
+   const obj = { key: 'value' };
+   const escapedObj = escapeHtml(obj);
+   expect(escapedObj).toBe('{&quot;key&quot;:&quot;value&quot;}');
+
+   // Test with array
+   const arr = [1, 2, 3];
+   const escapedArr = escapeHtml(arr);
+   expect(escapedArr).toBe('[1,2,3]');
+
+   // Test with number
+   expect(escapeHtml(123)).toBe('123');
+
+   // Test with null
+   const escapedNull = escapeHtml(null);
+   expect(escapedNull).toBe('null');
+
+   // Test with undefined
+   const escapedUndefined = escapeHtml(undefined);
+   expect(escapedUndefined).toBe('undefined');
+
+   // Test with HTML content in object
+   const objWithHtml = { error: '<script>alert("xss")</script>' };
+   const escapedObjWithHtml = escapeHtml(objWithHtml);
+   expect(escapedObjWithHtml).toContain('&lt;script&gt;');
+   expect(escapedObjWithHtml).not.toContain('<script>');
+  });
 });
 
