@@ -66,7 +66,10 @@ interface TeslaUserResponse {
 }
 
 interface TeslaRegionResponse {
-  response?: string;
+  response?: {
+    region?: string;
+    fleet_api_base_url?: string;
+  };
 }
 
 interface TeslaOperationResponse {
@@ -490,7 +493,15 @@ app.get('/home', async (c) => {
   // Region Section
   if (region) {
     sections.push('<h2>Region</h2>');
-    sections.push(`<p>${escapeHtml(region)}</p>`);
+    sections.push('<table border="1" cellpadding="5" cellspacing="0">');
+    sections.push('<tr><th>Field</th><th>Value</th></tr>');
+    if (region.region) {
+      sections.push(`<tr><td>Region</td><td>${escapeHtml(region.region)}</td></tr>`);
+    }
+    if (region.fleet_api_base_url) {
+      sections.push(`<tr><td>Fleet API Base URL</td><td>${escapeHtml(region.fleet_api_base_url)}</td></tr>`);
+    }
+    sections.push('</table>');
   }
 
   // Energy Site Information
