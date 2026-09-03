@@ -13,6 +13,7 @@ export interface Env {
   TESLA_PARTNER_AUTH_BASE_URL?: string;
   TESLA_DOMAIN?: string;
   ADMIN_API_TOKEN?: string;
+  DEBUG_MODE?: string;
 }
 
 const DEFAULT_SCOPE = 'openid email offline_access energy_device_data energy_cmds';
@@ -112,6 +113,7 @@ function getCookieValue(cookieHeader: string | undefined | null, name: string): 
   return undefined;
 }
 
+
 function escapeHtml(value: string): string {
   return value
     .replace(/&/g, '&amp;')
@@ -119,6 +121,11 @@ function escapeHtml(value: string): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+function isDebugMode(env: Env): boolean {
+  const debugMode = env.DEBUG_MODE;
+  return debugMode === 'true' || debugMode === '1' || debugMode === 'yes';
 }
 
 // Helper to safely parse JSON response and drain body on error
@@ -133,6 +140,41 @@ async function parseJsonResponse<T>(response: Response | undefined, parser: (bod
 }
 
 const app = new Hono<{ Bindings: Env }>();
+
+// Error handling middleware - catches uncaught exceptions and returns them in debug mode
+app.onError((err, c) => {
+  if (isDebugMode(c.env)) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    const errorStack = (err instanceof Error && err.stack) ? err.stack : 'No stack trace available';
+    
+    const html = `<!doctype html>
+<html>
+<head>
+  <title>Internal Server Error - Debug</title>
+  <style>
+    body { font-family: monospace; margin: 20px; background-color: #f5f5f5; }
+    .error-container { background-color: #fff; border: 1px solid #ddd; padding: 20px; border-radius: 4px; }
+    .error-title { color: #d9534f; font-size: 20px; font-weight: bold; margin-bottom: 10px; }
+    .error-message { color: #333; margin-bottom: 20px; }
+    .error-stack { background-color: #f9f9f9; border: 1px solid #ddd; padding: 10px; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word; font-size: 12px; color: #666; }
+    .debug-warning { color: #ff6600; margin-top: 20px; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <div class="error-container">
+    <div class="error-title">Internal Server Error (Debug Mode Enabled)</div>
+    <div class="error-message"><strong>Message:</strong> ${escapeHtml(errorMessage)}</div>
+    <div class="error-stack"><strong>Stack Trace:</strong>\n${escapeHtml(errorStack)}</div>
+    <div class="debug-warning">⚠️ This debug information is only visible because DEBUG_MODE is enabled. Disable it in production!</div>
+  </div>
+</body>
+</html>`;
+    
+    return c.html(html, 500);
+  }
+  
+  return c.text('Internal Server Error', 500);
+});
 
 app.get('/', (c) => {
   return c.json({
