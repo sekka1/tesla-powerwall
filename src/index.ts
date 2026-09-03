@@ -473,6 +473,23 @@ app.get('/home', async (c) => {
   sections.push('<h1>Tesla Energy Dashboard</h1>');
   sections.push('<p><a href="/auth/logout">Log out</a></p>');
 
+  // Debug section (only in DEBUG_MODE)
+  if (isDebugMode(c.env)) {
+    sections.push('<h2>Debug Information</h2>');
+    sections.push('<table border="1" cellpadding="5" cellspacing="0">');
+    sections.push('<tr><th>Item</th><th>Status</th></tr>');
+    sections.push(`<tr><td>User Info (userInfo)</td><td>${userInfo ? '✓ Got data' : '✗ Empty/Failed'}</td></tr>`);
+    sections.push(`<tr><td>Region (region)</td><td>${region ? '✓ Got data' : '✗ Empty/Failed'}</td></tr>`);
+    sections.push(`<tr><td>Energy Site ID (tesla_site_id)</td><td>${userRow.tesla_site_id ? `✓ ${userRow.tesla_site_id}` : '✗ Not set'}</td></tr>`);
+    sections.push(`<tr><td>Charging History (chargingHistoryData)</td><td>${
+      chargingHistoryData && Array.isArray(chargingHistoryData)
+        ? `✓ ${chargingHistoryData.length} records`
+        : '✗ Empty/Failed'
+    }</td></tr>`);
+    sections.push('</table>');
+    sections.push('<p style="color: #666; font-size: 12px;">Debug mode is enabled. This section will not appear in production.</p>');
+  }
+
   // User Info Section
   if (userInfo) {
     sections.push('<h2>User Information</h2>');
