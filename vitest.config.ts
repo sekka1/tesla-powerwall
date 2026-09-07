@@ -17,6 +17,7 @@ export default defineWorkersConfig(async () => {
               TESLA_CLIENT_SECRET: 'test-client-secret',
               TESLA_DOMAIN: 'tesla-powerwall.example.com',
               ADMIN_API_TOKEN: 'test-admin-token',
+              DATA_API_TOKEN: 'test-data-token',
             },
           },
         },

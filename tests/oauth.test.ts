@@ -299,6 +299,46 @@ describe('/auth/callback', () => {
   });
 });
 
+describe('/data', () => {
+  it('requires the sensor API bearer token', async () => {
+    const response = await SELF.fetch('https://example.com/data', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device_id: 'sensor-1', temperature: 21, humidity: 45, timestamp: Date.now() / 1000 }),
+    });
+    expect(response.status).toBe(401);
+  });
+
+  it('stores an authenticated sensor reading', async () => {
+    const timestamp = Math.floor(Date.now() / 1000);
+    const response = await SELF.fetch('https://example.com/data', {
+      method: 'POST',
+      headers: {
+        Authorization: buildAuthHeader('test-data-token'),
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ device_id: 'sensor-1', temperature: 21.5, humidity: 45, timestamp }),
+    });
+    expect(response.status).toBe(201);
+    const row = await env.DB.prepare(
+      'SELECT device_id, observed_at, temperature, humidity FROM sensor_readings WHERE device_id = ?1 ORDER BY id DESC LIMIT 1'
+    ).bind('sensor-1').first();
+    expect(row).toMatchObject({ device_id: 'sensor-1', observed_at: timestamp, temperature: 21.5, humidity: 45 });
+  });
+
+  it('rejects invalid sensor readings', async () => {
+    const response = await SELF.fetch('https://example.com/data', {
+      method: 'POST',
+      headers: {
+        Authorization: buildAuthHeader('test-data-token'),
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ device_id: 'sensor 1', temperature: 21, humidity: 101, timestamp: Date.now() / 1000 }),
+    });
+    expect(response.status).toBe(400);
+  });
+});
+
 describe('/home', () => {
   it('rejects requests without a valid session cookie', async () => {
     const response = await SELF.fetch('https://example.com/home');
@@ -321,6 +361,9 @@ describe('/home', () => {
     )
       .bind(userId, '999', 'access-token-value', 'refresh-token-value', Math.floor(Date.now() / 1000) + 3600)
       .run();
+    await env.DB.prepare(
+      'INSERT INTO sensor_readings (device_id, observed_at, temperature, humidity) VALUES (?1, ?2, ?3, ?4)'
+    ).bind('dashboard-sensor', Math.floor(Date.now() / 1000), 22.5, 48).run();
 
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: RequestInfo | URL) => {
       const url = typeof input === 'string' ? input : input.toString();
@@ -426,6 +469,9 @@ describe('/home', () => {
       expect(html).toContain('20%');
       expect(html).toContain('Wall Connector');
       expect(html).toContain('25.5');
+      expect(html).toContain('dashboard-sensor');
+      expect(html).toContain('Temperature over time');
+      expect(html).toContain('Humidity over time');
       expect(html).toContain('/auth/logout');
     } finally {
       fetchSpy.mockRestore();
@@ -693,4 +739,3 @@ describe('Error Handler Middleware', () => {
    expect(escapedObjWithHtml).not.toContain('<script>');
   });
 });
-

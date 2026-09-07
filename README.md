@@ -45,6 +45,28 @@ registered with Tesla as the OAuth redirect/origin.
      `POST https://fleet-api.prd.na.vn.cloud.tesla.com/api/1/partner_accounts` with the
      configured `TESLA_DOMAIN`, and returns Tesla's response.
 
+5. **Receives sensor readings** at `POST /data`. The endpoint requires an
+   `Authorization` header with the `Bearer` scheme and the configured
+   `DATA_API_TOKEN`, and an
+   `application/json` body in this format:
+
+   ```json
+   {
+     "device_id": "sensor-1",
+     "temperature": 21.5,
+     "humidity": 45,
+     "timestamp": "2026-09-07T21:45:00Z"
+   }
+   ```
+
+   `device_id` may contain letters, numbers, `.`, `_`, and `-`; temperature is
+   in Celsius, humidity is a percentage, and `timestamp` may be an ISO-8601
+   UTC string or Unix timestamp in seconds. Readings are rejected when values
+   are invalid or outside sensible ranges. Configure the token as a Worker
+   secret with `wrangler secret put DATA_API_TOKEN`. A successful request
+   returns `201 {"status":"ok"}`. Authenticated users see the latest 20
+   readings and temperature/humidity charts on `/home`.
+
 ## Project layout
 
 ```
@@ -82,6 +104,7 @@ Secrets must **never** be committed to source control or placed in `vars`. Set t
 wrangler secret put TESLA_CLIENT_SECRET
 wrangler secret put PRIVATE_KEY
 wrangler secret put ADMIN_API_TOKEN
+wrangler secret put DATA_API_TOKEN
 ```
 
 `ADMIN_API_TOKEN` is **not** issued by Tesla or Cloudflare — it's a password you make up
@@ -222,5 +245,3 @@ changes, or Tesla's partner_accounts records are reset) — it is idempotent to 
 - Read `AGENTS.md` before making changes — it documents security, testing, and architectural rules specific to this repository.
 - See `.github/agents/` for specialized personas (`security-expert`, `database-expert`, `devops-expert`) to consult when touching related areas of the code.
 - This is a Cloudflare Workers project (edge runtime) — do not introduce Node.js-only built-ins (`fs`, `path`, `child_process`, etc.) into `src/`.
-
-

@@ -13,6 +13,7 @@ export interface Env {
   TESLA_PARTNER_AUTH_BASE_URL?: string;
   TESLA_DOMAIN?: string;
   ADMIN_API_TOKEN?: string;
+  DATA_API_TOKEN?: string;
   DEBUG_MODE?: string;
 }
 
@@ -104,6 +105,15 @@ interface TeslaPartnerTokenResponse {
   access_token: string;
 }
 
+interface SensorReading {
+  id: number;
+  device_id: string;
+  observed_at: number;
+  received_at: number;
+  temperature: number;
+  humidity: number;
+}
+
 function getCookieValue(cookieHeader: string | undefined | null, name: string): string | undefined {
   if (!cookieHeader) return undefined;
   const cookies = cookieHeader.split(';').map(c => c.trim());
@@ -139,6 +149,79 @@ function escapeHtml(value: unknown): string {
 function isDebugMode(env: Env): boolean {
   const debugMode = env.DEBUG_MODE;
   return debugMode === 'true' || debugMode === '1' || debugMode === 'yes';
+}
+
+async function hasValidDataToken(providedToken: string | undefined, configuredToken: string | undefined): Promise<boolean> {
+  if (!providedToken || !configuredToken) return false;
+  const [providedHash, configuredHash] = await Promise.all(
+    [providedToken, configuredToken].map((value) => crypto.subtle.digest('SHA-256', new TextEncoder().encode(value)))
+  );
+  const providedBytes = new Uint8Array(providedHash as ArrayBuffer);
+  const configuredBytes = new Uint8Array(configuredHash as ArrayBuffer);
+  if (providedBytes.length !== configuredBytes.length) return false;
+  let difference = 0;
+  for (let index = 0; index < providedBytes.length; index += 1) {
+    difference |= (providedBytes[index] ?? 0) ^ (configuredBytes[index] ?? 0);
+  }
+  return difference === 0;
+}
+
+function parseSensorReading(payload: unknown): Omit<SensorReading, 'id' | 'received_at'> | undefined {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return undefined;
+  const value = payload as Record<string, unknown>;
+  const deviceId = value.device_id;
+  const temperature = value.temperature;
+  const humidity = value.humidity;
+  const timestamp = value.timestamp;
+  if (
+    typeof deviceId !== 'string' ||
+    !/^[A-Za-z0-9._-]{1,100}$/.test(deviceId) ||
+    typeof temperature !== 'number' ||
+    !Number.isFinite(temperature) ||
+    temperature < -100 ||
+    temperature > 150 ||
+    typeof humidity !== 'number' ||
+    !Number.isFinite(humidity) ||
+    humidity < 0 ||
+    humidity > 100
+  ) return undefined;
+
+  const observedAt = typeof timestamp === 'number'
+    ? timestamp
+    : typeof timestamp === 'string'
+      ? Date.parse(timestamp) / 1000
+      : NaN;
+  if (!Number.isFinite(observedAt) || observedAt < 0 || observedAt > Date.now() / 1000 + 300) return undefined;
+  return { device_id: deviceId, observed_at: Math.floor(observedAt), temperature, humidity };
+}
+
+function renderSensorChart(title: string, readings: SensorReading[], field: 'temperature' | 'humidity'): string {
+  const grouped = new Map<string, SensorReading[]>();
+  for (const reading of readings) {
+    const deviceReadings = grouped.get(reading.device_id) || [];
+    deviceReadings.push(reading);
+    grouped.set(reading.device_id, deviceReadings);
+  }
+  const width = 700;
+  const height = 260;
+  const padding = 40;
+  const values = readings.map((reading) => reading[field]);
+  const min = field === 'humidity' ? 0 : Math.min(...values, 0);
+  const max = field === 'humidity' ? 100 : Math.max(...values, 1);
+  const times = readings.map((reading) => reading.observed_at);
+  const firstTime = Math.min(...times, 0);
+  const lastTime = Math.max(...times, firstTime + 1);
+  const colors = ['#2563eb', '#dc2626', '#16a34a', '#9333ea', '#ea580c', '#0891b2'];
+  const lines = [...grouped.entries()].map(([deviceId, deviceReadings], index) => {
+    const points = deviceReadings.map((reading) => {
+      const x = padding + ((reading.observed_at - firstTime) / (lastTime - firstTime)) * (width - padding * 2);
+      const y = height - padding - ((reading[field] - min) / (max - min)) * (height - padding * 2);
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    }).join(' ');
+    const color = colors[index % colors.length];
+    return `<polyline points="${points}" fill="none" stroke="${color}" stroke-width="2"/><text x="${width - 130}" y="${padding + index * 18}" fill="${color}">${escapeHtml(deviceId)}</text>`;
+  }).join('');
+  return `<h2>${title}</h2><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${title}" class="chart"><line x1="${padding}" y1="${height - padding}" x2="${width - padding}" y2="${height - padding}" stroke="#666"/><line x1="${padding}" y1="${padding}" x2="${padding}" y2="${height - padding}" stroke="#666"/>${lines}</svg>`;
 }
 
 // Helper to safely parse JSON response and drain body on error
@@ -269,6 +352,30 @@ app.post('/admin/register-domain', async (c) => {
     status: registerResponse.status,
     headers: { 'Content-Type': registerResponse.headers.get('Content-Type') || 'application/json' },
   });
+});
+
+app.post('/data', async (c) => {
+  const authorization = c.req.header('Authorization');
+  const token = authorization?.startsWith('Bearer ') ? authorization.slice(7) : undefined;
+  if (!(await hasValidDataToken(token, c.env.DATA_API_TOKEN))) {
+    return c.text('Unauthorized', 401);
+  }
+  if (!c.req.header('Content-Type')?.toLowerCase().startsWith('application/json')) {
+    return c.text('Content-Type must be application/json', 415);
+  }
+
+  let reading: Omit<SensorReading, 'id' | 'received_at'> | undefined;
+  try {
+    reading = parseSensorReading(await c.req.json());
+  } catch {
+    return c.text('Invalid JSON', 400);
+  }
+  if (!reading) return c.text('Invalid sensor data', 400);
+
+  await c.env.DB.prepare(
+    'INSERT INTO sensor_readings (device_id, observed_at, temperature, humidity) VALUES (?1, ?2, ?3, ?4)'
+  ).bind(reading.device_id, reading.observed_at, reading.temperature, reading.humidity).run();
+  return c.json({ status: 'ok' }, 201);
 });
 
 app.get('/auth/login', async (c) => {
@@ -623,6 +730,26 @@ app.get('/home', async (c) => {
     sections.push('</table>');
   }
 
+  const recentSensorRows = await c.env.DB.prepare(
+    'SELECT id, device_id, observed_at, received_at, temperature, humidity FROM sensor_readings ORDER BY observed_at DESC, id DESC LIMIT 20'
+  ).all<SensorReading>();
+  const chartSensorRows = await c.env.DB.prepare(
+    'SELECT id, device_id, observed_at, received_at, temperature, humidity FROM sensor_readings ORDER BY observed_at ASC, id ASC LIMIT 5000'
+  ).all<SensorReading>();
+  const recentSensors = recentSensorRows.results || [];
+  const chartSensors = chartSensorRows.results || [];
+  sections.push('<h2>Sensor Data</h2>');
+  sections.push('<table><tr><th>Device ID</th><th>Time</th><th>Temperature (°C)</th><th>Humidity (%)</th></tr>');
+  for (const sensor of recentSensors) {
+    sections.push(`<tr><td>${escapeHtml(sensor.device_id)}</td><td>${escapeHtml(new Date(sensor.observed_at * 1000).toISOString())}</td><td>${sensor.temperature}</td><td>${sensor.humidity}</td></tr>`);
+  }
+  if (recentSensors.length === 0) sections.push('<tr><td colspan="4">No sensor data received.</td></tr>');
+  sections.push('</table>');
+  if (chartSensors.length > 0) {
+    sections.push(renderSensorChart('Temperature over time', chartSensors, 'temperature'));
+    sections.push(renderSensorChart('Humidity over time', chartSensors, 'humidity'));
+  }
+
   const html = `<!doctype html>
 <html>
 <head>
@@ -632,6 +759,7 @@ app.get('/home', async (c) => {
     table { border-collapse: collapse; margin-bottom: 20px; }
     th { background-color: #f0f0f0; text-align: left; }
     td { padding: 8px; }
+    .chart { display: block; max-width: 700px; width: 100%; height: auto; margin-bottom: 20px; }
     pre { background-color: #f5f5f5; padding: 10px; overflow-x: auto; }
   </style>
 </head>
