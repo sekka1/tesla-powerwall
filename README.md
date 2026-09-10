@@ -25,7 +25,7 @@ registered with Tesla as the OAuth redirect/origin.
      don't match what's registered in the Tesla Developer Portal), Tesla's raw error response body is
      forwarded back as-is (with a `502` status, mirroring `/admin/register-domain` below) so the real
      cause is visible instead of a generic message.
-   - Looks up the user's `energy_site_id` via `GET /api/1/energy_sites` on Tesla's Fleet API.
+   - Looks up the user's `energy_site_id` via `GET /api/1/products` on Tesla's Fleet API, with a fallback to `GET /api/1/energy_sites` for compatibility.
    - Persists the tokens and site id in the `tesla_users` table in Cloudflare D1.
    - Fetches `site_info` and `live_status` for that energy site and renders the site name, battery
      charge, and solar/battery/grid power on the success page, so the OAuth flow and Fleet API

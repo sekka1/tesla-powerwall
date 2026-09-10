@@ -224,8 +224,8 @@ describe('/auth/callback', () => {
           { status: 200, headers: { 'Content-Type': 'application/json' } }
         );
       }
-      if (url.includes('/api/1/energy_sites')) {
-        return new Response(JSON.stringify({ response: [{ energy_site_id: 999 }] }), {
+      if (url.includes('/api/1/products')) {
+        return new Response(JSON.stringify({ response: [{ energy_site_id: 999, resource_type: 'battery' }] }), {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
         });
@@ -473,7 +473,7 @@ describe('/home', () => {
     }
   });
 
-  it('handles users without an energy site ID', async () => {
+  it('backfills a missing energy site ID from products and displays live status', async () => {
     const userId = 'test-user-no-site';
     await env.DB.prepare(
       'INSERT INTO tesla_users (id, tesla_site_id, access_token, refresh_token, expires_at) VALUES (?1, ?2, ?3, ?4, ?5)'
@@ -504,6 +504,57 @@ describe('/home', () => {
           { status: 200, headers: { 'Content-Type': 'application/json' } }
         );
       }
+      if (url.includes('/api/1/products')) {
+        return new Response(
+          JSON.stringify({
+            response: [{ energy_site_id: 777, resource_type: 'battery' }],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      if (url.includes('/api/1/energy_sites/777/site_info')) {
+        return new Response(
+          JSON.stringify({
+            response: { site_name: 'Recovered Site' },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      if (url.includes('/api/1/energy_sites/777/live_status')) {
+        return new Response(
+          JSON.stringify({
+            response: {
+              solar_power: 3200,
+              battery_power: -450,
+              grid_power: 150,
+              percentage_charged: 91,
+              grid_status: 'Active',
+            },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      if (url.includes('/api/1/energy_sites/777/operation')) {
+        return new Response(
+          JSON.stringify({
+            response: {
+              mode: 'self_consumption',
+              backup_reserve_percent: 15,
+            },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      if (url.includes('/api/1/energy_sites/777/time_of_use_settings')) {
+        return new Response(
+          JSON.stringify({
+            response: {
+              optimization_strategy: 'balanced',
+            },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
       if (url.includes('/api/1/charging_history')) {
         return new Response(
           JSON.stringify({
@@ -524,6 +575,13 @@ describe('/home', () => {
       expect(html).toContain('Tesla Energy Dashboard');
       expect(html).toContain('nosite@example.com');
       expect(html).toContain('US');
+      expect(html).toContain('Recovered Site');
+      expect(html).toContain('91%');
+
+      const row = await env.DB.prepare('SELECT tesla_site_id FROM tesla_users WHERE id = ?1')
+        .bind(userId)
+        .first();
+      expect(row).toMatchObject({ tesla_site_id: '777' });
     } finally {
       fetchSpy.mockRestore();
     }

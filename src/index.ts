@@ -16,7 +16,7 @@ export interface Env {
   DEBUG_MODE?: string;
 }
 
-const DEFAULT_SCOPE = 'openid email offline_access energy_device_data energy_cmds';
+const DEFAULT_SCOPE = 'openid email offline_access user_data energy_device_data energy_cmds';
 const DEFAULT_AUTH_BASE_URL = 'https://auth.tesla.com';
 const DEFAULT_API_BASE_URL = 'https://fleet-api.prd.na.vn.cloud.tesla.com';
 const DEFAULT_PARTNER_AUTH_BASE_URL = 'https://fleet-auth.prd.vn.cloud.tesla.com';
@@ -34,6 +34,16 @@ interface TeslaEnergySite {
 
 interface TeslaEnergySitesResponse {
   response?: TeslaEnergySite[];
+}
+
+interface TeslaProduct {
+  energy_site_id?: number | string;
+  id?: number | string;
+  resource_type?: string;
+}
+
+interface TeslaProductsResponse {
+  response?: TeslaProduct[];
 }
 
 interface TeslaSiteInfo {
@@ -150,6 +160,57 @@ async function parseJsonResponse<T>(response: Response | undefined, parser: (bod
   // Consume error response body to prevent resource leaks on Cloudflare Workers
   await response.text();
   return undefined;
+}
+
+function extractEnergySiteIdFromProducts(products: TeslaProduct[] | undefined): string | null {
+  if (!products || products.length === 0) {
+    return null;
+  }
+
+  for (const product of products) {
+    if (product.energy_site_id !== undefined && product.energy_site_id !== null) {
+      return String(product.energy_site_id);
+    }
+  }
+
+  for (const product of products) {
+    const resourceType = product.resource_type?.toLowerCase();
+    if (resourceType?.includes('battery') && product.id !== undefined && product.id !== null) {
+      return String(product.id);
+    }
+  }
+
+  return null;
+}
+
+async function fetchEnergySiteId(apiBaseUrl: string, authorizationHeader: string): Promise<string | null> {
+  const productsResponse = await fetch(new URL('/api/1/products', apiBaseUrl).toString(), {
+    headers: { Authorization: authorizationHeader },
+  });
+
+  if (productsResponse.ok) {
+    const productsData = (await productsResponse.json()) as TeslaProductsResponse;
+    const energySiteId = extractEnergySiteIdFromProducts(productsData.response);
+    if (energySiteId) {
+      return energySiteId;
+    }
+  } else {
+    await productsResponse.text();
+  }
+
+  const sitesResponse = await fetch(new URL('/api/1/energy_sites', apiBaseUrl).toString(), {
+    headers: { Authorization: authorizationHeader },
+  });
+
+  if (!sitesResponse.ok) {
+    await sitesResponse.text();
+    return null;
+  }
+
+  const sitesData = (await sitesResponse.json()) as TeslaEnergySitesResponse;
+  const firstSite = sitesData.response?.[0];
+  const rawId = firstSite?.energy_site_id ?? firstSite?.id;
+  return rawId !== undefined && rawId !== null ? String(rawId) : null;
 }
 
 const app = new Hono<{ Bindings: Env }>();
@@ -341,17 +402,7 @@ app.get('/auth/callback', async (c) => {
 
   const apiBaseUrl = c.env.TESLA_API_BASE_URL || DEFAULT_API_BASE_URL;
   const authorizationHeader = ['Bearer', tokens.access_token].join(' ');
-  const sitesResponse = await fetch(new URL('/api/1/energy_sites', apiBaseUrl).toString(), {
-    headers: { Authorization: authorizationHeader },
-  });
-
-  let energySiteId: string | null = null;
-  if (sitesResponse.ok) {
-    const sitesData = (await sitesResponse.json()) as TeslaEnergySitesResponse;
-    const firstSite = sitesData.response?.[0];
-    const rawId = firstSite?.energy_site_id ?? firstSite?.id;
-    energySiteId = rawId !== undefined && rawId !== null ? String(rawId) : null;
-  }
+  const energySiteId = await fetchEnergySiteId(apiBaseUrl, authorizationHeader);
 
   const expiresAt = Math.floor(Date.now() / 1000) + tokens.expires_in;
   const userId = crypto.randomUUID();
@@ -406,6 +457,16 @@ app.get('/home', async (c) => {
 
   const apiBaseUrl = c.env.TESLA_API_BASE_URL || DEFAULT_API_BASE_URL;
   const authorizationHeader = ['Bearer', userRow.access_token].join(' ');
+  let energySiteId = userRow.tesla_site_id ?? null;
+
+  if (!energySiteId) {
+    energySiteId = await fetchEnergySiteId(apiBaseUrl, authorizationHeader);
+    if (energySiteId) {
+      await c.env.DB.prepare('UPDATE tesla_users SET tesla_site_id = ?1 WHERE id = ?2')
+        .bind(energySiteId, userId)
+        .run();
+    }
+  }
 
   const coreApiPromises: Promise<Response>[] = [
     fetch(new URL('/api/1/users/me', apiBaseUrl).toString(), {
@@ -421,8 +482,7 @@ app.get('/home', async (c) => {
 
   // Add energy site API calls if site ID exists
   const energySitePromises: Promise<Response>[] = [];
-  if (userRow.tesla_site_id) {
-    const energySiteId = userRow.tesla_site_id;
+  if (energySiteId) {
     energySitePromises.push(
       fetch(new URL(`/api/1/energy_sites/${energySiteId}/site_info`, apiBaseUrl).toString(), {
         headers: { Authorization: authorizationHeader },
@@ -484,7 +544,7 @@ app.get('/home', async (c) => {
     sections.push('<tr><th>Item</th><th>Status</th></tr>');
     sections.push(`<tr><td>User Info (userInfo)</td><td>${userInfo ? '✓ Got data' : '✗ Empty/Failed'}</td></tr>`);
     sections.push(`<tr><td>Region (region)</td><td>${region ? '✓ Got data' : '✗ Empty/Failed'}</td></tr>`);
-    sections.push(`<tr><td>Energy Site ID (tesla_site_id)</td><td>${userRow.tesla_site_id ? `✓ ${userRow.tesla_site_id}` : '✗ Not set'}</td></tr>`);
+    sections.push(`<tr><td>Energy Site ID (tesla_site_id)</td><td>${energySiteId ? `✓ ${energySiteId}` : '✗ Not set'}</td></tr>`);
     sections.push(`<tr><td>Live Status (liveStatus)</td><td>${liveStatus ? '✓ Got data' : '✗ Empty/Failed'}</td></tr>`);
     sections.push(`<tr><td>Charging History (chargingHistoryData)</td><td>${
       chargingHistoryData && Array.isArray(chargingHistoryData)
@@ -527,8 +587,7 @@ app.get('/home', async (c) => {
   }
 
   // Energy Site Information
-  if (userRow.tesla_site_id) {
-    const energySiteId = userRow.tesla_site_id;
+  if (energySiteId) {
     sections.push('<h2>Energy Site Information</h2>');
 
     // Site Info
