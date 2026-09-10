@@ -467,6 +467,10 @@ app.get('/home', async (c) => {
   const userInfo = await parseJsonResponse(userResponse, (body) => (body as TeslaUserResponse).response);
   const region = await parseJsonResponse(regionResponse, (body) => (body as TeslaRegionResponse).response);
   const chargingHistoryData = await parseJsonResponse(chargingHistoryResponse, (body) => (body as TeslaChargingHistoryResponse).response);
+  const siteInfo = await parseJsonResponse(siteInfoResponse, (body) => (body as TeslaSiteInfoResponse).response);
+  const liveStatus = await parseJsonResponse(liveStatusResponse, (body) => (body as TeslaLiveStatusResponse).response);
+  const operation = await parseJsonResponse(operationResponse, (body) => (body as TeslaOperationResponse).response);
+  const timeOfUse = await parseJsonResponse(timeOfUseResponse, (body) => (body as TeslaTimeOfUseResponse).response);
 
   // Build HTML sections
   const sections: string[] = [];
@@ -481,6 +485,7 @@ app.get('/home', async (c) => {
     sections.push(`<tr><td>User Info (userInfo)</td><td>${userInfo ? '✓ Got data' : '✗ Empty/Failed'}</td></tr>`);
     sections.push(`<tr><td>Region (region)</td><td>${region ? '✓ Got data' : '✗ Empty/Failed'}</td></tr>`);
     sections.push(`<tr><td>Energy Site ID (tesla_site_id)</td><td>${userRow.tesla_site_id ? `✓ ${userRow.tesla_site_id}` : '✗ Not set'}</td></tr>`);
+    sections.push(`<tr><td>Live Status (liveStatus)</td><td>${liveStatus ? '✓ Got data' : '✗ Empty/Failed'}</td></tr>`);
     sections.push(`<tr><td>Charging History (chargingHistoryData)</td><td>${
       chargingHistoryData && Array.isArray(chargingHistoryData)
         ? `✓ ${chargingHistoryData.length} records`
@@ -525,13 +530,6 @@ app.get('/home', async (c) => {
   if (userRow.tesla_site_id) {
     const energySiteId = userRow.tesla_site_id;
     sections.push('<h2>Energy Site Information</h2>');
-
-    // Responses for energy site are at indices 3, 4, 5, 6 if they exist
-    // Consume all response bodies even on error to prevent resource leaks on Cloudflare Workers
-    const siteInfo = await parseJsonResponse(siteInfoResponse, (body) => (body as TeslaSiteInfoResponse).response);
-    const liveStatus = await parseJsonResponse(liveStatusResponse, (body) => (body as TeslaLiveStatusResponse).response);
-    const operation = await parseJsonResponse(operationResponse, (body) => (body as TeslaOperationResponse).response);
-    const timeOfUse = await parseJsonResponse(timeOfUseResponse, (body) => (body as TeslaTimeOfUseResponse).response);
 
     // Site Info
     if (siteInfo) {
