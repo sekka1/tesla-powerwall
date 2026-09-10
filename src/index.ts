@@ -162,6 +162,40 @@ async function parseJsonResponse<T>(response: Response | undefined, parser: (bod
   return undefined;
 }
 
+function describeSettledResponse(result: PromiseSettledResult<Response> | undefined, wasRequested: boolean): string {
+  if (!wasRequested) {
+    return 'Not requested';
+  }
+
+  if (!result) {
+    return 'No result';
+  }
+
+  if (result.status === 'rejected') {
+    const reason = result.reason instanceof Error ? result.reason.message : String(result.reason);
+    return `Request failed: ${reason}`;
+  }
+
+  const statusText = result.value.statusText ? ` ${result.value.statusText}` : '';
+  return `${result.value.status}${statusText}`;
+}
+
+function describeDataState(data: unknown): string {
+  if (Array.isArray(data)) {
+    return `Array(${data.length})`;
+  }
+
+  if (data === null || data === undefined) {
+    return 'Empty/Failed';
+  }
+
+  if (typeof data === 'object') {
+    return 'Object';
+  }
+
+  return typeof data;
+}
+
 function extractEnergySiteIdFromProducts(products: TeslaProduct[] | undefined): string | null {
   if (!products || products.length === 0) {
     return null;
@@ -458,6 +492,7 @@ app.get('/home', async (c) => {
   const apiBaseUrl = c.env.TESLA_API_BASE_URL || DEFAULT_API_BASE_URL;
   const authorizationHeader = ['Bearer', userRow.access_token].join(' ');
   let energySiteId = userRow.tesla_site_id ?? null;
+  const energySiteIdSource = energySiteId ? 'stored in D1' : 'lookup required';
 
   if (!energySiteId) {
     energySiteId = await fetchEnergySiteId(apiBaseUrl, authorizationHeader);
@@ -467,6 +502,9 @@ app.get('/home', async (c) => {
         .run();
     }
   }
+  const resolvedEnergySiteIdSource = energySiteId
+    ? (userRow.tesla_site_id ? 'stored in D1' : 'backfilled from Tesla API')
+    : energySiteIdSource;
 
   const coreApiPromises: Promise<Response>[] = [
     fetch(new URL('/api/1/users/me', apiBaseUrl).toString(), {
@@ -516,12 +554,19 @@ app.get('/home', async (c) => {
   const userResponse = coreResponses[0] as Response;
   const regionResponse = coreResponses[1] as Response;
   const chargingHistoryResponse = coreResponses[2] as Response;
+  const userSettled = coreSettled[0];
+  const regionSettled = coreSettled[1];
+  const chargingHistorySettled = coreSettled[2];
 
   // Extract responses from energy site APIs (only present if tesla_site_id exists)
   const siteInfoResponse = siteResponses[0] as Response | undefined;
   const liveStatusResponse = siteResponses[1] as Response | undefined;
   const operationResponse = siteResponses[2] as Response | undefined;
   const timeOfUseResponse = siteResponses[3] as Response | undefined;
+  const siteInfoSettled = energySiteSettled[0];
+  const liveStatusSettled = energySiteSettled[1];
+  const operationSettled = energySiteSettled[2];
+  const timeOfUseSettled = energySiteSettled[3];
 
   // Consume all response bodies to prevent resource leaks on Cloudflare Workers
   const userInfo = await parseJsonResponse(userResponse, (body) => (body as TeslaUserResponse).response);
@@ -539,18 +584,36 @@ app.get('/home', async (c) => {
 
   // Debug section (only in DEBUG_MODE)
   if (isDebugMode(c.env)) {
+    const tokenExpiresInSeconds = userRow.expires_at - Math.floor(Date.now() / 1000);
     sections.push('<h2>Debug Information</h2>');
     sections.push('<table border="1" cellpadding="5" cellspacing="0">');
     sections.push('<tr><th>Item</th><th>Status</th></tr>');
+    sections.push(`<tr><td>API Base URL</td><td>${escapeHtml(apiBaseUrl)}</td></tr>`);
+    sections.push(`<tr><td>Token Expires In</td><td>${tokenExpiresInSeconds} seconds</td></tr>`);
     sections.push(`<tr><td>User Info (userInfo)</td><td>${userInfo ? '✓ Got data' : '✗ Empty/Failed'}</td></tr>`);
+    sections.push(`<tr><td>User Info HTTP</td><td>${escapeHtml(describeSettledResponse(userSettled, true))}</td></tr>`);
+    sections.push(`<tr><td>User Info Data Shape</td><td>${escapeHtml(describeDataState(userInfo))}</td></tr>`);
     sections.push(`<tr><td>Region (region)</td><td>${region ? '✓ Got data' : '✗ Empty/Failed'}</td></tr>`);
+    sections.push(`<tr><td>Region HTTP</td><td>${escapeHtml(describeSettledResponse(regionSettled, true))}</td></tr>`);
+    sections.push(`<tr><td>Region Data Shape</td><td>${escapeHtml(describeDataState(region))}</td></tr>`);
     sections.push(`<tr><td>Energy Site ID (tesla_site_id)</td><td>${energySiteId ? `✓ ${energySiteId}` : '✗ Not set'}</td></tr>`);
+    sections.push(`<tr><td>Energy Site ID Source</td><td>${escapeHtml(resolvedEnergySiteIdSource)}</td></tr>`);
+    sections.push(`<tr><td>Site Info HTTP</td><td>${escapeHtml(describeSettledResponse(siteInfoSettled, Boolean(energySiteId)))}</td></tr>`);
+    sections.push(`<tr><td>Site Info Data Shape</td><td>${escapeHtml(describeDataState(siteInfo))}</td></tr>`);
     sections.push(`<tr><td>Live Status (liveStatus)</td><td>${liveStatus ? '✓ Got data' : '✗ Empty/Failed'}</td></tr>`);
+    sections.push(`<tr><td>Live Status HTTP</td><td>${escapeHtml(describeSettledResponse(liveStatusSettled, Boolean(energySiteId)))}</td></tr>`);
+    sections.push(`<tr><td>Live Status Data Shape</td><td>${escapeHtml(describeDataState(liveStatus))}</td></tr>`);
+    sections.push(`<tr><td>Operation HTTP</td><td>${escapeHtml(describeSettledResponse(operationSettled, Boolean(energySiteId)))}</td></tr>`);
+    sections.push(`<tr><td>Operation Data Shape</td><td>${escapeHtml(describeDataState(operation))}</td></tr>`);
+    sections.push(`<tr><td>Time Of Use HTTP</td><td>${escapeHtml(describeSettledResponse(timeOfUseSettled, Boolean(energySiteId)))}</td></tr>`);
+    sections.push(`<tr><td>Time Of Use Data Shape</td><td>${escapeHtml(describeDataState(timeOfUse))}</td></tr>`);
     sections.push(`<tr><td>Charging History (chargingHistoryData)</td><td>${
       chargingHistoryData && Array.isArray(chargingHistoryData)
         ? `✓ ${chargingHistoryData.length} records`
         : '✗ Empty/Failed'
     }</td></tr>`);
+    sections.push(`<tr><td>Charging History HTTP</td><td>${escapeHtml(describeSettledResponse(chargingHistorySettled, true))}</td></tr>`);
+    sections.push(`<tr><td>Charging History Data Shape</td><td>${escapeHtml(describeDataState(chargingHistoryData))}</td></tr>`);
     sections.push('</table>');
     sections.push('<p style="color: #666; font-size: 12px;">Debug mode is enabled. This section will not appear in production.</p>');
   }
