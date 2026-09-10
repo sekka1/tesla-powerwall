@@ -586,34 +586,29 @@ app.get('/home', async (c) => {
   if (isDebugMode(c.env)) {
     const tokenExpiresInSeconds = userRow.expires_at - Math.floor(Date.now() / 1000);
     sections.push('<h2>Debug Information</h2>');
+    sections.push('<h3>Session and Configuration</h3>');
     sections.push('<table border="1" cellpadding="5" cellspacing="0">');
     sections.push('<tr><th>Item</th><th>Status</th></tr>');
     sections.push(`<tr><td>API Base URL</td><td>${escapeHtml(apiBaseUrl)}</td></tr>`);
     sections.push(`<tr><td>Token Expires In</td><td>${tokenExpiresInSeconds} seconds</td></tr>`);
-    sections.push(`<tr><td>User Info (userInfo)</td><td>${userInfo ? '✓ Got data' : '✗ Empty/Failed'}</td></tr>`);
-    sections.push(`<tr><td>User Info HTTP</td><td>${escapeHtml(describeSettledResponse(userSettled, true))}</td></tr>`);
-    sections.push(`<tr><td>User Info Data Shape</td><td>${escapeHtml(describeDataState(userInfo))}</td></tr>`);
-    sections.push(`<tr><td>Region (region)</td><td>${region ? '✓ Got data' : '✗ Empty/Failed'}</td></tr>`);
-    sections.push(`<tr><td>Region HTTP</td><td>${escapeHtml(describeSettledResponse(regionSettled, true))}</td></tr>`);
-    sections.push(`<tr><td>Region Data Shape</td><td>${escapeHtml(describeDataState(region))}</td></tr>`);
     sections.push(`<tr><td>Energy Site ID (tesla_site_id)</td><td>${energySiteId ? `✓ ${energySiteId}` : '✗ Not set'}</td></tr>`);
     sections.push(`<tr><td>Energy Site ID Source</td><td>${escapeHtml(resolvedEnergySiteIdSource)}</td></tr>`);
-    sections.push(`<tr><td>Site Info HTTP</td><td>${escapeHtml(describeSettledResponse(siteInfoSettled, Boolean(energySiteId)))}</td></tr>`);
-    sections.push(`<tr><td>Site Info Data Shape</td><td>${escapeHtml(describeDataState(siteInfo))}</td></tr>`);
-    sections.push(`<tr><td>Live Status (liveStatus)</td><td>${liveStatus ? '✓ Got data' : '✗ Empty/Failed'}</td></tr>`);
-    sections.push(`<tr><td>Live Status HTTP</td><td>${escapeHtml(describeSettledResponse(liveStatusSettled, Boolean(energySiteId)))}</td></tr>`);
-    sections.push(`<tr><td>Live Status Data Shape</td><td>${escapeHtml(describeDataState(liveStatus))}</td></tr>`);
-    sections.push(`<tr><td>Operation HTTP</td><td>${escapeHtml(describeSettledResponse(operationSettled, Boolean(energySiteId)))}</td></tr>`);
-    sections.push(`<tr><td>Operation Data Shape</td><td>${escapeHtml(describeDataState(operation))}</td></tr>`);
-    sections.push(`<tr><td>Time Of Use HTTP</td><td>${escapeHtml(describeSettledResponse(timeOfUseSettled, Boolean(energySiteId)))}</td></tr>`);
-    sections.push(`<tr><td>Time Of Use Data Shape</td><td>${escapeHtml(describeDataState(timeOfUse))}</td></tr>`);
-    sections.push(`<tr><td>Charging History (chargingHistoryData)</td><td>${
+    sections.push('</table>');
+
+    sections.push('<h3>Endpoint Status</h3>');
+    sections.push('<table border="1" cellpadding="5" cellspacing="0">');
+    sections.push('<tr><th>Item</th><th>Requested</th><th>HTTP Status</th><th>Parsed Data</th><th>Notes</th></tr>');
+    sections.push(`<tr><td>User Info (userInfo)</td><td>Yes</td><td>${escapeHtml(describeSettledResponse(userSettled, true))}</td><td>${escapeHtml(describeDataState(userInfo))}</td><td>${userInfo ? '✓ Got data' : '✗ Empty/Failed'}</td></tr>`);
+    sections.push(`<tr><td>Region (region)</td><td>Yes</td><td>${escapeHtml(describeSettledResponse(regionSettled, true))}</td><td>${escapeHtml(describeDataState(region))}</td><td>${region ? '✓ Got data' : '✗ Empty/Failed'}</td></tr>`);
+    sections.push(`<tr><td>Site Info</td><td>${energySiteId ? 'Yes' : 'No'}</td><td>${escapeHtml(describeSettledResponse(siteInfoSettled, Boolean(energySiteId)))}</td><td>${escapeHtml(describeDataState(siteInfo))}</td><td>${siteInfo ? '✓ Got data' : '✗ Empty/Failed'}</td></tr>`);
+    sections.push(`<tr><td>Live Status (liveStatus)</td><td>${energySiteId ? 'Yes' : 'No'}</td><td>${escapeHtml(describeSettledResponse(liveStatusSettled, Boolean(energySiteId)))}</td><td>${escapeHtml(describeDataState(liveStatus))}</td><td>${liveStatus ? '✓ Got data' : '✗ Empty/Failed'}</td></tr>`);
+    sections.push(`<tr><td>Operation</td><td>${energySiteId ? 'Yes' : 'No'}</td><td>${escapeHtml(describeSettledResponse(operationSettled, Boolean(energySiteId)))}</td><td>${escapeHtml(describeDataState(operation))}</td><td>${operation ? '✓ Got data' : '✗ Empty/Failed'}</td></tr>`);
+    sections.push(`<tr><td>Time Of Use</td><td>${energySiteId ? 'Yes' : 'No'}</td><td>${escapeHtml(describeSettledResponse(timeOfUseSettled, Boolean(energySiteId)))}</td><td>${escapeHtml(describeDataState(timeOfUse))}</td><td>${timeOfUse ? '✓ Got data' : '✗ Empty/Failed'}</td></tr>`);
+    sections.push(`<tr><td>Charging History (chargingHistoryData)</td><td>Yes</td><td>${escapeHtml(describeSettledResponse(chargingHistorySettled, true))}</td><td>${escapeHtml(describeDataState(chargingHistoryData))}</td><td>${
       chargingHistoryData && Array.isArray(chargingHistoryData)
         ? `✓ ${chargingHistoryData.length} records`
         : '✗ Empty/Failed'
     }</td></tr>`);
-    sections.push(`<tr><td>Charging History HTTP</td><td>${escapeHtml(describeSettledResponse(chargingHistorySettled, true))}</td></tr>`);
-    sections.push(`<tr><td>Charging History Data Shape</td><td>${escapeHtml(describeDataState(chargingHistoryData))}</td></tr>`);
     sections.push('</table>');
     sections.push('<p style="color: #666; font-size: 12px;">Debug mode is enabled. This section will not appear in production.</p>');
   }

@@ -467,10 +467,12 @@ describe('/home', () => {
       const html = await response.text();
       expect(html).toContain('Tesla Energy Dashboard');
       expect(html).toContain('partial@example.com');
-      expect(html).toContain('User Info HTTP');
-      expect(html).toContain('200');
-      expect(html).toContain('Charging History HTTP');
-      expect(html).toContain('404');
+      expect(html).toContain('Endpoint Status');
+      expect(html).toContain('HTTP Status');
+      expect(html).toContain('User Info (userInfo)');
+      expect(html).toContain('200 OK');
+      expect(html).toContain('Charging History (chargingHistoryData)');
+      expect(html).toContain('404 Not Found');
       expect(html).toContain('Energy Site ID Source');
       expect(html).toContain('/auth/logout');
     } finally {
