@@ -196,6 +196,18 @@ function describeDataState(data: unknown): string {
   return typeof data;
 }
 
+function renderDebugJson(data: unknown): string {
+  if (data === null || data === undefined) {
+    return '';
+  }
+
+  if (typeof data === 'object') {
+    return `<pre>${escapeHtml(JSON.stringify(data, null, 2))}</pre>`;
+  }
+
+  return escapeHtml(String(data));
+}
+
 function extractEnergySiteIdFromProducts(products: TeslaProduct[] | undefined): string | null {
   if (!products || products.length === 0) {
     return null;
@@ -597,14 +609,14 @@ app.get('/home', async (c) => {
 
     sections.push('<h3>Endpoint Status</h3>');
     sections.push('<table border="1" cellpadding="5" cellspacing="0">');
-    sections.push('<tr><th>Item</th><th>Requested</th><th>HTTP Status</th><th>Parsed Data</th><th>Notes</th></tr>');
-    sections.push(`<tr><td>User Info (userInfo)</td><td>Yes</td><td>${escapeHtml(describeSettledResponse(userSettled, true))}</td><td>${escapeHtml(describeDataState(userInfo))}</td><td>${userInfo ? '✓ Got data' : '✗ Empty/Failed'}</td></tr>`);
-    sections.push(`<tr><td>Region (region)</td><td>Yes</td><td>${escapeHtml(describeSettledResponse(regionSettled, true))}</td><td>${escapeHtml(describeDataState(region))}</td><td>${region ? '✓ Got data' : '✗ Empty/Failed'}</td></tr>`);
-    sections.push(`<tr><td>Site Info</td><td>${energySiteId ? 'Yes' : 'No'}</td><td>${escapeHtml(describeSettledResponse(siteInfoSettled, Boolean(energySiteId)))}</td><td>${escapeHtml(describeDataState(siteInfo))}</td><td>${siteInfo ? '✓ Got data' : '✗ Empty/Failed'}</td></tr>`);
-    sections.push(`<tr><td>Live Status (liveStatus)</td><td>${energySiteId ? 'Yes' : 'No'}</td><td>${escapeHtml(describeSettledResponse(liveStatusSettled, Boolean(energySiteId)))}</td><td>${escapeHtml(describeDataState(liveStatus))}</td><td>${liveStatus ? '✓ Got data' : '✗ Empty/Failed'}</td></tr>`);
-    sections.push(`<tr><td>Operation</td><td>${energySiteId ? 'Yes' : 'No'}</td><td>${escapeHtml(describeSettledResponse(operationSettled, Boolean(energySiteId)))}</td><td>${escapeHtml(describeDataState(operation))}</td><td>${operation ? '✓ Got data' : '✗ Empty/Failed'}</td></tr>`);
-    sections.push(`<tr><td>Time Of Use</td><td>${energySiteId ? 'Yes' : 'No'}</td><td>${escapeHtml(describeSettledResponse(timeOfUseSettled, Boolean(energySiteId)))}</td><td>${escapeHtml(describeDataState(timeOfUse))}</td><td>${timeOfUse ? '✓ Got data' : '✗ Empty/Failed'}</td></tr>`);
-    sections.push(`<tr><td>Charging History (chargingHistoryData)</td><td>Yes</td><td>${escapeHtml(describeSettledResponse(chargingHistorySettled, true))}</td><td>${escapeHtml(describeDataState(chargingHistoryData))}</td><td>${
+    sections.push('<tr><th>Item</th><th>Verb</th><th>Endpoint</th><th>Requested</th><th>HTTP Status</th><th>Parsed Data</th><th>Response JSON</th><th>Notes</th></tr>');
+    sections.push(`<tr><td>User Info (userInfo)</td><td>GET</td><td>/api/1/users/me</td><td>Yes</td><td>${escapeHtml(describeSettledResponse(userSettled, true))}</td><td>${escapeHtml(describeDataState(userInfo))}</td><td>${renderDebugJson(userInfo)}</td><td>${userInfo ? '✓ Got data' : '✗ Empty/Failed'}</td></tr>`);
+    sections.push(`<tr><td>Region (region)</td><td>GET</td><td>/api/1/users/region</td><td>Yes</td><td>${escapeHtml(describeSettledResponse(regionSettled, true))}</td><td>${escapeHtml(describeDataState(region))}</td><td>${renderDebugJson(region)}</td><td>${region ? '✓ Got data' : '✗ Empty/Failed'}</td></tr>`);
+    sections.push(`<tr><td>Site Info</td><td>GET</td><td>${energySiteId ? escapeHtml(`/api/1/energy_sites/${energySiteId}/site_info`) : ''}</td><td>${energySiteId ? 'Yes' : 'No'}</td><td>${escapeHtml(describeSettledResponse(siteInfoSettled, Boolean(energySiteId)))}</td><td>${escapeHtml(describeDataState(siteInfo))}</td><td>${renderDebugJson(siteInfo)}</td><td>${siteInfo ? '✓ Got data' : '✗ Empty/Failed'}</td></tr>`);
+    sections.push(`<tr><td>Live Status (liveStatus)</td><td>GET</td><td>${energySiteId ? escapeHtml(`/api/1/energy_sites/${energySiteId}/live_status`) : ''}</td><td>${energySiteId ? 'Yes' : 'No'}</td><td>${escapeHtml(describeSettledResponse(liveStatusSettled, Boolean(energySiteId)))}</td><td>${escapeHtml(describeDataState(liveStatus))}</td><td>${renderDebugJson(liveStatus)}</td><td>${liveStatus ? '✓ Got data' : '✗ Empty/Failed'}</td></tr>`);
+    sections.push(`<tr><td>Operation</td><td>GET</td><td>${energySiteId ? escapeHtml(`/api/1/energy_sites/${energySiteId}/operation`) : ''}</td><td>${energySiteId ? 'Yes' : 'No'}</td><td>${escapeHtml(describeSettledResponse(operationSettled, Boolean(energySiteId)))}</td><td>${escapeHtml(describeDataState(operation))}</td><td>${renderDebugJson(operation)}</td><td>${operation ? '✓ Got data' : '✗ Empty/Failed'}</td></tr>`);
+    sections.push(`<tr><td>Time Of Use</td><td>GET</td><td>${energySiteId ? escapeHtml(`/api/1/energy_sites/${energySiteId}/time_of_use_settings`) : ''}</td><td>${energySiteId ? 'Yes' : 'No'}</td><td>${escapeHtml(describeSettledResponse(timeOfUseSettled, Boolean(energySiteId)))}</td><td>${escapeHtml(describeDataState(timeOfUse))}</td><td>${renderDebugJson(timeOfUse)}</td><td>${timeOfUse ? '✓ Got data' : '✗ Empty/Failed'}</td></tr>`);
+    sections.push(`<tr><td>Charging History (chargingHistoryData)</td><td>GET</td><td>/api/1/charging_history</td><td>Yes</td><td>${escapeHtml(describeSettledResponse(chargingHistorySettled, true))}</td><td>${escapeHtml(describeDataState(chargingHistoryData))}</td><td>${renderDebugJson(chargingHistoryData)}</td><td>${
       chargingHistoryData && Array.isArray(chargingHistoryData)
         ? `✓ ${chargingHistoryData.length} records`
         : '✗ Empty/Failed'

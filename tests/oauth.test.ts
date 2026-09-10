@@ -469,8 +469,13 @@ describe('/home', () => {
       expect(html).toContain('partial@example.com');
       expect(html).toContain('Endpoint Status');
       expect(html).toContain('HTTP Status');
+      expect(html).toContain('Verb');
+      expect(html).toContain('Endpoint');
       expect(html).toContain('User Info (userInfo)');
+      expect(html).toContain('/api/1/users/me');
       expect(html).toContain('200 OK');
+      expect(html).toContain('GET');
+      expect(html).toContain('/api/1/energy_sites/888/site_info');
       expect(html).toContain('Charging History (chargingHistoryData)');
       expect(html).toContain('404 Not Found');
       expect(html).toContain('Energy Site ID Source');
